@@ -1,0 +1,51 @@
+{
+  "name": "pitchpresence",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "node --import tsx --env-file=.env apps/api/src/server.ts",
+    "dev:web": "npm run dev -w @pitchpresence/web",
+    "build": "npm run build -w @pitchpresence/shared && npm run build -w @pitchpresence/database && npm run build -w @pitchpresence/api && npm run build -w @pitchpresence/web",
+    "typecheck": "tsc --noEmit && npm run typecheck -w @pitchpresence/web",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:integration": "vitest run apps/api/test/integration",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "worker": "node --import tsx --env-file=.env apps/api/src/worker.ts",
+    "docs:generate": "node --import tsx scripts/generate-openapi.ts",
+    "pretest": "npm run build:backend",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "pretest:integration": "npm run build:backend",
+    "build:backend": "npm run build -w @pitchpresence/shared && npm run build -w @pitchpresence/database && npm run build -w @pitchpresence/api",
+    "media:sync": "node scripts/sync-media.mjs",
+    "test:web": "playwright test",
+    "db:reset:development": "node --env-file=.env scripts/reset-development.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.15",
+    "@playwright/test": "1.58.2",
+    "@types/node": "22.19.21",
+    "@types/pg": "8.15.6",
+    "eslint": "9.39.4",
+    "pg": "8.18.0",
+    "prettier": "3.8.1",
+    "prisma": "6.19.3",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.57.2",
+    "vitest": "3.2.7"
+  },
+  "type": "module"
+}

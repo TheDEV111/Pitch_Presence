@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PLAYER
+  MANAGER
+}
+
+enum SessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum AttendanceMethod {
+  QR
+  MANUAL
+}
+
+enum DuesStatus {
+  NOT_PAID
+  PAID
+}
+
+enum PaymentProvider {
+  PAYSTACK
+  EXTERNAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum OtpPurpose {
+  VERIFY_EMAIL
+  PIN_RESET
+  PASSWORD_RESET
+}
+
+model User {
+  id                  String               @id @default(uuid()) @db.Uuid
+  email               String               @unique
+  name                String
+  role                Role                 @default(PLAYER)
+  pinHash             String?
+  passwordHash        String?
+  teamId              String?              @db.Uuid
+  team                Team?                @relation(fields: [teamId], references: [id])
+  pendingInvitationId String?              @db.Uuid
+  isVerified          Boolean              @default(false)
+  active              Boolean              @default(false)
+  activatedAt         DateTime?            @db.Timestamptz(3)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  sessions            DeviceSession[]
+  verificationTokens  VerificationToken[]
+  participants        SessionParticipant[]
+  dues                MonthlyDues[]
+  payments            Payment[]
+
+  @@unique([teamId, id])
+}
+
+model Invitation {
+  teamId     String    @db.Uuid
+  kind       Role      @default(PLAYER)
+  email      String?
+  acceptedBy String?   @db.Uuid
+  acceptedAt DateTime? @db.Timestamptz(3)
+  id         String    @id @default(uuid()) @db.Uuid
+  tokenHash  String    @unique
+  expiresAt  DateTime  @db.Timestamptz(3)
+  createdBy  String    @db.Uuid
+  revokedAt  DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+}
+
+model VerificationToken {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @db.Uuid
+  user       User       @relation(fields: [userId], references: [id])
+  purpose    OtpPurpose
+  otpHash    String
+  expiresAt  DateTime   @db.Timestamptz(3)
+  attempts   Int        @default(0)
+  consumedAt DateTime?  @db.Timestamptz(3)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, purpose, createdAt])
+}
+
+model DeviceSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id])
+  tokenHash  String    @unique
+  expiresAt  DateTime  @db.Timestamptz(3)
+  lastUsedAt DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+}
+
+model TrainingSession {
+  teamId             String               @db.Uuid
+  id                 String               @id @default(uuid()) @db.Uuid
+  name               String
+  date               String
+  status             SessionStatus        @default(OPEN)
+  startedAt          DateTime             @default(now()) @db.Timestamptz(3)
+  closedAt           DateTime?            @db.Timestamptz(3)
+  startedBy          String               @db.Uuid
+  latitude           Float
+  longitude          Float
+  locationAccuracy   Float
+  locationCapturedAt DateTime             @db.Timestamptz(3)
+  participants       SessionParticipant[]
+
+  @@unique([teamId, id])
+  @@index([startedAt, id])
+}
+
+model SessionParticipant {
+  teamId     String          @db.Uuid
+  id         String          @id @default(uuid()) @db.Uuid
+  sessionId  String          @db.Uuid
+  playerId   String          @db.Uuid
+  playerName String
+  session    TrainingSession @relation(fields: [sessionId], references: [id])
+  player     User            @relation(fields: [playerId], references: [id])
+  attendance Attendance?
+
+  @@unique([sessionId, playerId])
+  @@unique([teamId, id])
+}
+
+model Attendance {
+  teamId        String             @db.Uuid
+  id            String             @id @default(uuid()) @db.Uuid
+  participantId String             @unique @db.Uuid
+  participant   SessionParticipant @relation(fields: [participantId], references: [id])
+  sessionId     String             @db.Uuid
+  playerId      String             @db.Uuid
+  checkedInAt   DateTime           @default(now()) @db.Timestamptz(3)
+  method        AttendanceMethod
+  recordedBy    String?            @db.Uuid
+
+  @@unique([sessionId, playerId])
+}
+
+model DuesPeriod {
+  teamId        String    @db.Uuid
+  id            String    @id @default(uuid()) @db.Uuid
+  month         String
+  minimumAmount Int
+  currency      String    @default("NGN")
+  frozenAt      DateTime? @db.Timestamptz(3)
+  configuredBy  String    @db.Uuid
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@unique([teamId, month])
+}
+
+model MonthlyDues {
+  teamId              String     @db.Uuid
+  id                  String     @id @default(uuid()) @db.Uuid
+  playerId            String     @db.Uuid
+  player              User       @relation(fields: [playerId], references: [id])
+  month               String
+  status              DuesStatus @default(NOT_PAID)
+  paidAt              DateTime?  @db.Timestamptz(3)
+  qualifyingPaymentId String?    @db.Uuid
+  payments            Payment[]
+  createdAt           DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@unique([playerId, month])
+  @@unique([teamId, id])
+  @@index([month, status])
+}
+
+model Payment {
+  teamId            String          @db.Uuid
+  paymentProfileId  String?         @db.Uuid
+  subaccountCode    String?
+  id                String          @id @default(uuid()) @db.Uuid
+  playerId          String          @db.Uuid
+  player            User            @relation(fields: [playerId], references: [id])
+  monthlyDuesId     String          @db.Uuid
+  monthlyDues       MonthlyDues     @relation(fields: [monthlyDuesId], references: [id])
+  amount            Int
+  minimumAmount     Int
+  currency          String          @default("NGN")
+  provider          PaymentProvider
+  providerReference String?         @unique
+  status            PaymentStatus   @default(PENDING)
+  checkoutUrl       String?
+  markedBy          String?         @db.Uuid
+  externalReference String?
+  paidAt            DateTime?       @db.Timestamptz(3)
+  verifiedAt        DateTime?       @db.Timestamptz(3)
+  reversedAt        DateTime?       @db.Timestamptz(3)
+  reversedBy        String?         @db.Uuid
+  reversalReason    String?
+  needsReview       Boolean         @default(false)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@unique([teamId, id])
+  @@index([status, createdAt])
+}
+
+model AuditEvent {
+  teamId    String?  @db.Uuid
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  action    String
+  entityId  String
+  reason    String?
+  changes   Json?
+  requestId String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt, id])
+}
+
+model BackgroundJob {
+  teamId           String?   @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  kind             String
+  payload          Json
+  deduplicationKey String    @unique
+  attempts         Int       @default(0)
+  availableAt      DateTime  @default(now()) @db.Timestamptz(3)
+  leaseUntil       DateTime? @db.Timestamptz(3)
+  leaseToken       String?
+  completedAt      DateTime? @db.Timestamptz(3)
+  failedAt         DateTime? @db.Timestamptz(3)
+  lastError        String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([availableAt, completedAt, failedAt])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(1)
+  expiresAt DateTime @db.Timestamptz(3)
+}
+
+model IdempotencyRecord {
+  teamId      String   @db.Uuid
+  key         String   @id
+  playerId    String   @db.Uuid
+  fingerprint String
+  paymentId   String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model Team {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  createdBy        String   @db.Uuid
+  paymentProfileId String?  @unique @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  users            User[]
+}
+
+enum PaymentSetupStatus {
+  PENDING
+  READY
+  REVIEW
+}
+
+model TeamPaymentProfile {
+  id             String             @id @default(uuid()) @db.Uuid
+  teamId         String             @db.Uuid
+  bankCode       String
+  accountName    String
+  accountLast4   String
+  subaccountCode String?            @unique
+  status         PaymentSetupStatus @default(PENDING)
+  configuredBy   String             @db.Uuid
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@unique([teamId, id])
+}

@@ -1,0 +1,26 @@
+{
+  "license": "https://www.pexels.com/license/",
+  "use": "Pexels licence permits free personal and commercial use and editing. Do not imply endorsement by depicted people. Photos illustrate training, not a PitchPresence customer team.",
+  "assets": [
+    {
+      "name": "training",
+      "source": "https://www.pexels.com/photo/soccer-coach-training-players-on-field-30585023/",
+      "creator": "Franco Monsalvo",
+      "download": "https://images.pexels.com/photos/30585023/pexels-photo-30585023.jpeg",
+      "width": 5568,
+      "height": 3712,
+      "alt": "A coach organising football players during training on a green pitch.",
+      "focalPoint": "50% 50%"
+    },
+    {
+      "name": "coach",
+      "source": "https://www.pexels.com/photo/soccer-coach-giving-tactical-instructions-outdoors-30314825/",
+      "creator": "Ali Bensoula",
+      "download": "https://images.pexels.com/photos/30314825/pexels-photo-30314825.jpeg",
+      "width": 3456,
+      "height": 5184,
+      "alt": "A football coach explaining a training strategy beside the pitch.",
+      "focalPoint": "50% 40%"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+node_modules/
+**/.next/
+**/*.tsbuildinfo
+test-results/
+playwright-report/
+dist/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+
+# Local credentials, agent state, and portable Git backups.
+/.agents/
+/.aws/
+/.codex/
+/.github-backup/

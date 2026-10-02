@@ -1,0 +1,9 @@
+{
+  "name": "PitchPresence",
+  "short_name": "PitchPresence",
+  "start_url": "/home",
+  "display": "standalone",
+  "background_color": "#fff9f1",
+  "theme_color": "#195c3c",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
