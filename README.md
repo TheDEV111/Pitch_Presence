@@ -62,5 +62,6 @@ The test suite creates synthetic users and financial records; never point it at 
 - [Architecture decisions](docs/backend/decisions.md)
 - [Operations and recovery](docs/backend/runbook.md)
 - [Environment configuration](docs/backend/environment.md)
+- [Supabase PostgreSQL setup](docs/backend/supabase.md)
 
 The source PRD is `PitchPresence_V1_Detailed_PRD.pdf`. Production provider testing and deployment require your Resend and Paystack accounts.
