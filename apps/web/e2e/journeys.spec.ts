@@ -325,6 +325,7 @@ test('staff resolve and confirm a bank, reauthenticate, and stay signed in after
   page,
 }) => {
   let connected = false;
+  let bankListRequests = 0;
   const manager = { ...player, role: 'MANAGER' };
   const profile = {
     id: '23546b6e-a0b7-40a0-ae9c-2d910738fbf0',
@@ -348,8 +349,20 @@ test('staff resolve and confirm a bank, reauthenticate, and stay signed in after
       return route.fulfill({ json: { items: [manager], nextCursor: null } });
     if (path.endsWith('/management/staff-invitations'))
       return route.fulfill({ json: { items: [], nextCursor: null } });
-    if (path.endsWith('/management/banks'))
-      return route.fulfill({ json: [{ code: '058', name: 'Test Bank' }] });
+    if (path.endsWith('/management/banks')) {
+      bankListRequests++;
+      if (bankListRequests === 1)
+        return route.fulfill({
+          status: 503,
+          json: {
+            error: {
+              code: 'PROVIDER_UNAVAILABLE',
+              message: 'The bank list is temporarily unavailable.',
+            },
+          },
+        });
+      return route.fulfill({ json: [{ code: '058', name: 'Guaranty Trust Bank' }] });
+    }
     if (path.endsWith('/management/bank/resolve'))
       return route.fulfill({ json: { accountName: 'TEAM ACCOUNT' } });
     if (path.endsWith('/management/bank')) {
@@ -377,6 +390,11 @@ test('staff resolve and confirm a bank, reauthenticate, and stay signed in after
     });
   });
   await page.goto('/management/team');
+  await expect(page.getByLabel('Bank', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Resolve account name' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry loading banks' }).click();
+  await expect(page.getByLabel('Bank', { exact: true })).toBeEnabled();
+  await expect(page.getByRole('option', { name: 'Guaranty Trust Bank' })).toHaveCount(1);
   await page.getByLabel('Bank', { exact: true }).selectOption('058');
   await page.getByLabel('Ten-digit account number').fill('0123456789');
   await page.getByRole('button', { name: 'Resolve account name' }).click();

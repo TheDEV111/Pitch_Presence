@@ -192,6 +192,7 @@ export function TeamSettingsPage() {
     setPassword('');
   }
   const pending = settings.data?.latestSetup && settings.data.latestSetup.status !== 'READY';
+  const banksAvailable = !!banks.data?.length && !banks.error && !banks.loading;
   return (
     <>
       <PageTitle
@@ -301,6 +302,19 @@ export function TeamSettingsPage() {
               </div>
             )}
             <Feedback error={banks.error} />
+            {banks.loading && <p role="status">Loading Nigerian banks…</p>}
+            {!banks.loading && (banks.error || !banks.data?.length) && (
+              <div className="form-stack">
+                <p className="helper">
+                  {banks.error
+                    ? 'We couldn’t load the banks. Try again to continue bank setup.'
+                    : 'No supported Nigerian banks are available right now. Try again shortly.'}
+                </p>
+                <Button variant="secondary" onClick={banks.reload}>
+                  Retry loading banks
+                </Button>
+              </div>
+            )}
             {pending ? (
               <div className="form-stack">
                 <div className="notice">
@@ -329,6 +343,7 @@ export function TeamSettingsPage() {
                     <span>Bank</span>
                     <select
                       required
+                      disabled={!banksAvailable || busy}
                       value={bankCode}
                       onChange={(e) => {
                         setBankCode(e.target.value);
@@ -336,13 +351,18 @@ export function TeamSettingsPage() {
                         setConfirm(false);
                       }}
                     >
-                      <option value="">Select bank</option>
+                      <option value="">
+                        {banks.loading ? 'Loading Nigerian banks…' : 'Select a Nigerian bank'}
+                      </option>
                       {banks.data?.map((bank) => (
                         <option key={bank.code} value={bank.code}>
                           {bank.name}
                         </option>
                       ))}
                     </select>
+                    <small>
+                      Choose the bank that will receive your team’s dues through Paystack.
+                    </small>
                   </label>
                   <Field
                     label="Ten-digit account number"
@@ -358,7 +378,12 @@ export function TeamSettingsPage() {
                     }}
                     required
                   />
-                  <Button type="submit" variant="secondary" busy={busy} disabled={!banks.data}>
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    busy={busy}
+                    disabled={!banksAvailable || !bankCode || accountNumber.length !== 10}
+                  >
                     Resolve account name
                   </Button>
                 </form>

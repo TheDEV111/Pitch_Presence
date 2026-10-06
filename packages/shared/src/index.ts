@@ -92,7 +92,7 @@ export interface Page<T> {
   items: T[];
   nextCursor: string | null;
 }
-export const QR_LIFETIME_SECONDS = 15;
+export const QR_LIFETIME_SECONDS = 30;
 export const QR_REFRESH_SECONDS = 10;
 export const TEAM_TIMEZONE = 'Africa/Lagos';
 export const CURRENCY = 'NGN';

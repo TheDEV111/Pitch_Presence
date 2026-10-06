@@ -1,6 +1,7 @@
 import { seedTeam, bankProviders } from '../fixtures/team.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHmac, randomUUID } from 'node:crypto';
+import { decodeJwt, SignJWT } from 'jose';
 import argon2 from 'argon2';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/index.js';
@@ -226,10 +227,24 @@ describe('attendance lifecycle', () => {
     const result = await request('POST', `/api/v1/training-sessions/${sessionId}/qr-token`, {});
     expect(result.statusCode).toBe(200);
     token = result.json().token;
+    const claims = decodeJwt(token);
+    expect(claims.exp! - claims.iat!).toBe(30);
+    expect(result.json().expiresAt).toBe(new Date(claims.exp! * 1000).toISOString());
     expect(result.json().refreshAfterSeconds).toBe(10);
   });
-  it('checks in a player without a form and is idempotent', async () => {
-    const first = await request('POST', '/api/v1/attendance/check-in', { token }, playerSession);
+  it('accepts a check-in delayed by 25 seconds and is idempotent', async () => {
+    const issuedAt = Math.floor(Date.now() / 1000) - 25;
+    const delayedToken = await new SignJWT(decodeJwt(token))
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .setIssuedAt(issuedAt)
+      .setExpirationTime(issuedAt + 30)
+      .sign(new TextEncoder().encode(config.QR_SIGNING_SECRET));
+    const first = await request(
+      'POST',
+      '/api/v1/attendance/check-in',
+      { token: delayedToken },
+      playerSession,
+    );
     expect(first.statusCode).toBe(200);
     expect(first.json().attendance.method).toBe('QR');
     const second = await request('POST', '/api/v1/attendance/check-in', { token }, playerSession);

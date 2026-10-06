@@ -1,5 +1,20 @@
 import type { Config } from '../config/index.js';
+import { z } from 'zod';
 import { AppError } from '../plugins/core.js';
+const bankPage = z.object({
+  data: z.array(
+    z.object({
+      code: z.string().regex(/^\d{3,10}$/),
+      name: z.string().trim().min(1),
+      active: z.boolean(),
+      is_deleted: z.boolean(),
+      country: z.string(),
+      currency: z.string(),
+      type: z.string(),
+    }),
+  ),
+  meta: z.object({ next: z.string().nullable().optional() }).optional(),
+});
 export interface Bank {
   code: string;
   name: string;
@@ -91,7 +106,40 @@ export function createProviders(config: Config): Providers {
   });
   return {
     async banks() {
-      return (await paystack('/bank?country=nigeria&currency=NGN&perPage=100')).data as Bank[];
+      const banks = new Map<string, Bank>();
+      const cursors = new Set<string>();
+      let next: string | undefined;
+      for (let page = 0; page < 100; page++) {
+        const query = new URLSearchParams({
+          country: 'nigeria',
+          currency: 'NGN',
+          perPage: '100',
+          use_cursor: 'true',
+          ...(next ? { next } : {}),
+        });
+        const result = bankPage.safeParse(await paystack(`/bank?${query}`));
+        if (!result.success)
+          throw new AppError(
+            503,
+            'PROVIDER_UNAVAILABLE',
+            'The bank list is temporarily unavailable.',
+          );
+        for (const bank of result.data.data) {
+          if (
+            bank.active &&
+            !bank.is_deleted &&
+            bank.country.toLowerCase() === 'nigeria' &&
+            bank.currency === 'NGN' &&
+            bank.type === 'nuban'
+          )
+            banks.set(bank.code, { code: bank.code, name: bank.name });
+        }
+        next = result.data.meta?.next ?? undefined;
+        if (!next) return [...banks.values()].sort((a, b) => a.name.localeCompare(b.name, 'en-NG'));
+        if (cursors.has(next)) break;
+        cursors.add(next);
+      }
+      throw new AppError(503, 'PROVIDER_UNAVAILABLE', 'The bank list could not finish loading.');
     },
     async resolveBank(bankCode, accountNumber) {
       const data = (

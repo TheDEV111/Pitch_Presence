@@ -52,7 +52,7 @@ Coaches/managers self-register with a 15–128-character password, verify email,
 
 Management starts sessions manually with a fresh location capture (at most two minutes old) and accuracy <=100 metres. Coordinates are manager-supplied device readings; they do not independently prove player location. Players joining after a session opens are eligible starting with the next session. Names and eligible player IDs are snapshotted at opening.
 
-Signed HS256 QR tokens last 15 seconds; the display refreshes every 10 seconds. Tokens contain team ID, session ID, issuer, audience, timestamps and nonce, without location or personal data. A token is shared across players, so it is not consumed globally. Unknown-device login never extends expiry.
+Signed HS256 QR tokens last 30 seconds from issuance; the display refreshes every 10 seconds, leaving extra time for network delays after scanning. Tokens contain team ID, session ID, issuer, audience, timestamps and nonce, without location or personal data. A token is shared across players, so it is not consumed globally. Unknown-device login never extends expiry.
 
 Check-in, manual marking and closure lock the same session row. Attendance revalidates the QR after waiting for the lock. Arrival and close timestamps use `clock_timestamp()` after lock acquisition. No new write is admitted after committed closure. Manual entries identify the manager. Duplicate valid requests return the existing record. Closed-session absence is derived from the saved roster; an open session uses NOT_CHECKED_IN.
 

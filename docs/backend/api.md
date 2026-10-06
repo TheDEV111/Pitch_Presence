@@ -30,6 +30,8 @@ Email verification and device login return `{user, team, nextStep, csrfToken}`. 
 
 All management calls require team membership. Setup returns READY or REVIEW details; a reviewed replacement leaves the previous active profile in place. Only last four digits and account name are public; raw account number/password are never persisted. Checkout requires a READY team profile; no fallback to the platform bank. Team commission is zero and team pays provider fees.
 
+`GET /management/banks` loads all cursor pages from Paystack's [List Banks API](https://paystack.com/docs/api/miscellaneous/#list-banks), restricted to Nigeria and NGN. Only active, non-deleted `nuban` entries are exposed, sorted by name and deduplicated by bank code. The server-only `PAYSTACK_SECRET_KEY` is required, including for loading the dropdown. The UI offers loading, empty and retry states. Select a bank, resolve the ten-digit account number, confirm the account name and authorisation, then reauthenticate to connect the team's Paystack subaccount.
+
 OTP expires in ten minutes and permits five attempts. Resend has a 60-second cooldown and five-send hourly account cap. Resend/reset requests have a shared IP cap. Login permits five failed account attempts per 15 minutes and 30 IP attempts per 15 minutes.
 
 ## Training and check-in
@@ -46,7 +48,7 @@ OTP expires in ten minutes and permits five attempts. Resend has a 60-second coo
 
 Submit fresh device readings to `POST /training-sessions`. The timestamp above is illustrative; an actual request must use a capture within the preceding two minutes.
 
-Request `POST /training-sessions/:id/qr-token` with `{}`. Render a web URL such as `/check-in#token=<encoded-token>` in the QR. A fragment avoids sending the QR token to web-server logs. The landing page extracts it, removes it from browser history and submits `POST /attendance/check-in` with `{token}` after authentication. Preserve it in memory across login; if expired, request a new scan. Do not write attendance in a GET request.
+Request `POST /training-sessions/:id/qr-token` with `{}`. Tokens are valid for 30 seconds from issuance; refresh the display every 10 seconds. Render a web URL such as `/check-in#token=<encoded-token>` in the QR. A fragment avoids sending the QR token to web-server logs. The landing page extracts it, removes it from browser history and submits `POST /attendance/check-in` with `{token}` after authentication. Preserve it in memory across login; if expired, request a new scan. Do not write attendance in a GET request.
 
 Success returns `{attendance, alreadyRecorded}`. Poll the manager attendance endpoint every five seconds. `POST /training-sessions/:id/attendance/manual` accepts `{playerId}`. `POST /training-sessions/:id/close` immediately closes the window. Repeated closure succeeds without adding another audit event.
 

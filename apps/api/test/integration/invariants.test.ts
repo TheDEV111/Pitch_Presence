@@ -73,11 +73,11 @@ describe('time and token boundaries', () => {
     const key = new TextEncoder().encode(config.QR_SIGNING_SECRET);
     const now = Math.floor(Date.now() / 1000);
     for (const [audience, start, end] of [
-      ['attendance', now - 16, now - 1],
-      ['other', now, now + 15],
+      ['attendance', now - 31, now - 1],
+      ['other', now, now + 30],
       ['attendance', now, now + 100],
     ] as const) {
-      const token = await new SignJWT({ sessionId: randomUUID() })
+      const token = await new SignJWT({ sessionId: randomUUID(), teamId: manager.teamId! })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuer('pitchpresence')
         .setAudience(audience)
@@ -85,7 +85,11 @@ describe('time and token boundaries', () => {
         .setExpirationTime(end)
         .setJti(randomUUID())
         .sign(key);
-      await expect(backend.services.training.validate(token)).rejects.toThrow();
+      await expect(
+        backend.services.training.validate(token, manager.teamId!),
+      ).rejects.toMatchObject({
+        code: end < now ? 'QR_EXPIRED' : 'QR_INVALID',
+      });
     }
   });
   it('encrypts OTP job contents with authenticated encryption', () => {

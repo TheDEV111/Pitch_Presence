@@ -363,7 +363,7 @@ The overview prioritises an active session or **Start attendance**, recent sessi
 **Open attendance:** on wide screens, place the QR/session summary beside the live roster. The QR renders with at least a four-module white quiet zone and no decorative logo overlay. Aim for a 280px code including its quiet zone on tablet and 360px desktop. Expanded display mode gives the code most of the usable screen while retaining session name, status, and a clear way back.
 
 - Show session name/date, Open status, checked-in count, and last successful roster update.
-- Request replacement QR tokens every 10 seconds; tokens last 15 seconds. Expiry indicators are visual metadata, not repeated screen-reader announcements.
+- Request replacement QR tokens every 10 seconds; tokens last 30 seconds from issuance to allow for network delays. Expiry indicators are visual metadata, not repeated screen-reader announcements.
 - Render a valid QR without crossfading or scaling. If freshness cannot be confirmed, hide the expired QR and show **Reconnecting** with a retry action.
 - Poll the roster every five seconds. Mark retained data as stale when refresh fails; do not invent additional arrivals.
 - Separate **Checked in** from **Not checked in**. Show name, arrival, and QR/Manual method. Managers can **Mark present** for eligible active players while attendance is open.
