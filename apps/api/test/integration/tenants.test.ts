@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, it, expect, describe } from 'vitest';
+import { beforeAll, beforeEach, afterAll, it, expect, describe } from 'vitest';
 import argon2 from 'argon2';
 import { randomUUID, createHmac } from 'node:crypto';
 import type { User } from '@pitchpresence/database';
@@ -179,7 +179,12 @@ describe('staff onboarding and recovery', () => {
     expect(user.teamId).toBeNull();
     expect(user.pinHash).toBeNull();
     expect(user.isVerified).toBe(false);
-    expect((await request('POST', '/auth/staff-login', { email, password })).statusCode).toBe(401);
+    const login = await request('POST', '/auth/staff-login', { email, password });
+    expect(login.statusCode).toBe(403);
+    expect(login.json().error.code).toBe('EMAIL_VERIFICATION_REQUIRED');
+    expect(
+      (await request('POST', '/auth/staff-login', { email, password: 'wrong' })).statusCode,
+    ).toBe(401);
     const response = await request('POST', '/auth/verify-email', { email, otp: await otp(email) });
     expect(response.statusCode).toBe(200);
     expect(response.json().nextStep).toBe('CREATE_TEAM');
@@ -252,6 +257,142 @@ describe('staff onboarding and recovery', () => {
       (await request('POST', '/auth/password-reset/confirm', { email, otp: code, password }))
         .statusCode,
     ).toBe(422);
+  });
+});
+describe('interrupted staff signup', () => {
+  beforeEach(async () => {
+    await fixture.db.rateLimitBucket.deleteMany({ where: { key: 'register:127.0.0.1' } });
+  });
+  it('retries a lost signup response without replacing the password, name, invitation or code', async () => {
+    const email = `${randomUUID()}@test.com`;
+    const invite = (await request('POST', '/management/staff-invitations', { email }, sa)).json();
+    const input = {
+      name: 'Original coach',
+      email,
+      password,
+      invitationToken: new URL(invite.registrationUrl).searchParams.get('invite')!,
+    };
+    expect((await request('POST', '/auth/staff-register', input)).statusCode).toBe(200);
+    const before = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    const code = await otp(email);
+    const response = await request('POST', '/auth/staff-register', {
+      name: 'Changed name',
+      email,
+      password,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().resendAfterSeconds).toBeGreaterThan(0);
+    expect(await fixture.db.user.findUniqueOrThrow({ where: { email } })).toEqual(before);
+    expect(await fixture.db.verificationToken.count({ where: { userId: before.id } })).toBe(1);
+    expect(
+      await fixture.db.backgroundJob.count({
+        where: { payload: { path: ['userId'], equals: before.id } },
+      }),
+    ).toBe(1);
+    expect(
+      (await request('POST', '/auth/verify-email', { email, otp: code })).json().nextStep,
+    ).toBe('ACCEPT_INVITATION');
+  });
+  it('rejects changed passwords, verified accounts and player credentials without modifying them', async () => {
+    const email = `${randomUUID()}@test.com`;
+    await request('POST', '/auth/staff-register', { name: 'Coach', email, password });
+    const before = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    for (const input of [
+      { email, password: 'a different secret passphrase' },
+      { email: a.email, password },
+      { email: pa.email, password },
+    ]) {
+      const response = await request('POST', '/auth/staff-register', {
+        name: 'Replacement',
+        ...input,
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe('ACCOUNT_EXISTS');
+    }
+    expect(await fixture.db.user.findUniqueOrThrow({ where: { email } })).toEqual(before);
+  });
+  it('replaces an expired code on signup retry and rejects the old challenge', async () => {
+    const email = `${randomUUID()}@test.com`;
+    const input = { name: 'Returning coach', email, password };
+    await request('POST', '/auth/staff-register', input);
+    const user = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    const challenge = await fixture.db.verificationToken.findFirstOrThrow({
+      where: { userId: user.id },
+    });
+    await fixture.db.verificationToken.update({
+      where: { id: challenge.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    await fixture.db.rateLimitBucket.deleteMany({ where: { key: { contains: 'otp-cooldown:' } } });
+    expect((await request('POST', '/auth/staff-register', input)).statusCode).toBe(200);
+    expect(
+      (await fixture.db.verificationToken.findUniqueOrThrow({ where: { id: challenge.id } }))
+        .consumedAt,
+    ).not.toBeNull();
+    expect(await fixture.db.user.count({ where: { email } })).toBe(1);
+    expect(
+      (await request('POST', '/auth/verify-email', { email, otp: await otp(email) })).statusCode,
+    ).toBe(200);
+  });
+  it('recovers a legacy account whose registration never queued its verification email', async () => {
+    const user = await fixture.db.user.create({
+      data: {
+        name: 'Legacy coach',
+        email: `${randomUUID()}@test.com`,
+        role: 'MANAGER',
+        passwordHash: hash,
+      },
+    });
+    expect(
+      (
+        await request('POST', '/auth/staff-register', {
+          name: 'Replacement',
+          email: user.email,
+          password,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await fixture.db.user.findUniqueOrThrow({ where: { id: user.id } })).name).toBe(
+      'Legacy coach',
+    );
+    expect(
+      (
+        await request('POST', '/auth/verify-email', {
+          email: user.email,
+          otp: await otp(user.email),
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+  it('rolls back the account and code if the durable email job cannot be saved', async () => {
+    const email = `${randomUUID()}@test.com`;
+    await fixture.db.$executeRawUnsafe(
+      `CREATE FUNCTION test_reject_email_job() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'simulated queue failure'; END; $$ LANGUAGE plpgsql`,
+    );
+    await fixture.db.$executeRawUnsafe(
+      `CREATE TRIGGER test_reject_email_job BEFORE INSERT ON "BackgroundJob" FOR EACH ROW EXECUTE FUNCTION test_reject_email_job()`,
+    );
+    try {
+      const response = await request('POST', '/auth/staff-register', {
+        name: 'Coach',
+        email,
+        password,
+      });
+      expect(response.statusCode).toBe(500);
+      expect(await fixture.db.user.findUnique({ where: { email } })).toBeNull();
+      expect(
+        await fixture.db.backgroundJob.count({
+          where: { payload: { path: ['email'], equals: email } },
+        }),
+      ).toBe(0);
+    } finally {
+      await fixture.db.$executeRawUnsafe(`DROP TRIGGER test_reject_email_job ON "BackgroundJob"`);
+      await fixture.db.$executeRawUnsafe(`DROP FUNCTION test_reject_email_job()`);
+    }
+    expect(
+      (await request('POST', '/auth/staff-register', { name: 'Coach', email, password }))
+        .statusCode,
+    ).toBe(200);
   });
 });
 describe('email-bound staff invitations', () => {

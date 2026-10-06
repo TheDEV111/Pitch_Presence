@@ -9,8 +9,11 @@ import {
   paymentResponse,
   trainingResponse,
   duesResponse,
+  registrationResponse,
 } from '@pitchpresence/shared';
 export function responseSchema(method: string, url: string): z.ZodTypeAny {
+  if (url === '/api/v1/auth/staff-register' || url === '/api/v1/auth/register')
+    return registrationResponse;
   if (url === '/api/v1/teams') return teamResponse;
   if (url === '/api/v1/management/overview') return overviewResponse;
   if (

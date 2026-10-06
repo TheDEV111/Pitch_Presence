@@ -16,6 +16,8 @@ The landing page and authentication layouts render without provider credentials 
 
 Authentication, registration and payments use the real API. There is no mock authentication or payment success. Coaches/managers self-register at `/signup`, verify email and create a team. Staff use email/password at `/sign-in`; players use email/PIN at `/player/sign-in` and register through a team invitation. Team settings support email-bound staff invites and bank account connection.
 
+Interrupted signup resumes email verification after refresh in the same tab. Only the pending email, role and resend deadline are stored in session storage, for at most 24 hours; credentials, OTPs and invitation tokens are never stored. Correct credentials on an unverified account open verification. A verified cookie resumes the server's team/invitation step even when browser hints are lost. Staff signup retries with the original password retain the account and current code; account creation and email queuing commit together. Connection failures during the initial session check offer a retry rather than allowing a stale auth context to submit forms.
+
 ## Routes
 
 | Audience   | Routes                                                                                                                                                |

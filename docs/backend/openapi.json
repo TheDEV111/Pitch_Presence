@@ -64,8 +64,21 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {},
-                  "additionalProperties": true
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "resendAfterSeconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 60
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "resendAfterSeconds"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1824,8 +1837,21 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {},
-                  "additionalProperties": true
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "resendAfterSeconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 60
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "resendAfterSeconds"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }

@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import argon2 from 'argon2';
-import type { OtpPurpose, PrismaClient, User } from '@pitchpresence/database';
+import { Prisma, type OtpPurpose, type PrismaClient, type User } from '@pitchpresence/database';
 import type { RegisterInput } from '@pitchpresence/shared';
 import type { Config } from '../../config/index.js';
 import {
@@ -34,7 +34,7 @@ export class AuthService {
   async register(input: RegisterInput, ip: string) {
     await rateLimit(this.db, `register:${ip}`, 10, 3600);
     const pinHash = await argon2.hash(input.pin, { type: argon2.argon2id });
-    const user = await this.db.$transaction(async (tx) => {
+    await this.db.$transaction(async (tx) => {
       const invitation = await tx.invitation.findUnique({
         where: { tokenHash: digest(input.invitationToken) },
       });
@@ -47,12 +47,14 @@ export class AuthService {
         'INVITATION_INVALID',
         'The invitation has expired or was revoked.',
       );
-      return tx.user.create({
+      const user = await tx.user.create({
         data: { name: input.name, email: input.email, pinHash, teamId: current.teamId },
       });
+      await this.otpLimits(tx, user.email);
+      await this.queueOtp(tx, user, 'VERIFY_EMAIL');
+      return user;
     });
-    await this.issueOtp(user.email, 'VERIFY_EMAIL');
-    return { message: 'Check your email for a verification code.' };
+    return { message: 'Check your email for a verification code.', resendAfterSeconds: 60 };
   }
   async staffRegister(
     input: { name: string; email: string; password: string; invitationToken?: string },
@@ -60,37 +62,94 @@ export class AuthService {
   ) {
     await rateLimit(this.db, `register:${ip}`, 10, 3600);
     const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
-    const user = await this.db.$transaction(async (tx) => {
-      let invitationId: string | undefined;
-      if (input.invitationToken) {
-        const invitation = await tx.invitation.findUnique({
-          where: { tokenHash: digest(input.invitationToken) },
+    try {
+      return await this.db.$transaction(async (tx) => {
+        const existing = await tx.user.findUnique({ where: { email: input.email } });
+        if (existing) {
+          await lock(tx, 'User', existing.id);
+          const current = await tx.user.findUniqueOrThrow({ where: { id: existing.id } });
+          requireRule(
+            current.role === 'MANAGER' &&
+              !current.isVerified &&
+              current.passwordHash &&
+              (await argon2.verify(current.passwordHash, input.password)),
+            409,
+            'ACCOUNT_EXISTS',
+            'An account already uses this email. Sign in or continue email verification.',
+          );
+          // A retry must not replace credentials, names or invitation membership.
+          const challenge = await tx.verificationToken.findFirst({
+            where: {
+              userId: current.id,
+              purpose: 'VERIFY_EMAIL',
+              consumedAt: null,
+              attempts: { lt: 5 },
+              expiresAt: { gt: new Date() },
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+          const job = challenge
+            ? await tx.backgroundJob.findUnique({
+                where: { deduplicationKey: `otp:${challenge.id}` },
+              })
+            : null;
+          if (!challenge || !job || job.failedAt) {
+            await this.otpLimits(tx, current.email);
+            await this.queueOtp(tx, current, 'VERIFY_EMAIL');
+          }
+          const bucket = await tx.rateLimitBucket.findUnique({
+            where: {
+              key: `otp-cooldown:${keyedDigest(this.config.SESSION_SECRET, current.email)}`,
+            },
+          });
+          return {
+            message: 'Continue with your latest email code, or request a new one.',
+            resendAfterSeconds: Math.max(
+              0,
+              Math.min(60, Math.ceil(((bucket?.expiresAt.getTime() ?? 0) - Date.now()) / 1000)),
+            ),
+          };
+        }
+        let invitationId: string | undefined;
+        if (input.invitationToken) {
+          const invitation = await tx.invitation.findUnique({
+            where: { tokenHash: digest(input.invitationToken) },
+          });
+          requireRule(
+            invitation &&
+              invitation.kind === 'MANAGER' &&
+              invitation.email === input.email &&
+              !invitation.revokedAt &&
+              !invitation.acceptedAt &&
+              invitation.expiresAt > new Date(),
+            422,
+            'INVITATION_INVALID',
+            'Ask your team for a new staff invitation.',
+          );
+          invitationId = invitation.id;
+        }
+        const user = await tx.user.create({
+          data: {
+            name: input.name,
+            email: input.email,
+            role: 'MANAGER',
+            passwordHash,
+            pendingInvitationId: invitationId,
+          },
         });
-        requireRule(
-          invitation &&
-            invitation.kind === 'MANAGER' &&
-            invitation.email === input.email &&
-            !invitation.revokedAt &&
-            !invitation.acceptedAt &&
-            invitation.expiresAt > new Date(),
-          422,
-          'INVITATION_INVALID',
-          'Ask your team for a new staff invitation.',
-        );
-        invitationId = invitation.id;
-      }
-      return tx.user.create({
-        data: {
-          name: input.name,
-          email: input.email,
-          role: 'MANAGER',
-          passwordHash,
-          pendingInvitationId: invitationId,
-        },
+        await this.otpLimits(tx, user.email);
+        await this.queueOtp(tx, user, 'VERIFY_EMAIL');
+        return { message: 'Check your email for a verification code.', resendAfterSeconds: 60 };
       });
-    });
-    await this.issueOtp(user.email, 'VERIFY_EMAIL');
-    return { message: 'Check your email for a verification code.' };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+        throw new AppError(
+          409,
+          'ACCOUNT_EXISTS',
+          'An account already uses this email. Sign in or continue email verification.',
+        );
+      throw error;
+    }
   }
   async context(user: User) {
     const team = user.teamId
@@ -174,11 +233,43 @@ export class AuthService {
       return publicUser(updated);
     });
   }
-  async issueOtp(email: string, purpose: OtpPurpose) {
+  private async otpLimits(db: PrismaClient | Prisma.TransactionClient, email: string) {
     // Rate limits apply to nonexistent accounts too, avoiding enumeration through timing/state.
     const key = keyedDigest(this.config.SESSION_SECRET, email);
-    await rateLimit(this.db, `otp-cooldown:${key}`, 1, 60);
-    await rateLimit(this.db, `otp-hour:${key}`, 5, 3600);
+    await rateLimit(db, `otp-cooldown:${key}`, 1, 60);
+    await rateLimit(db, `otp-hour:${key}`, 5, 3600);
+  }
+  private async queueOtp(tx: Prisma.TransactionClient, user: User, purpose: OtpPurpose) {
+    await tx.verificationToken.updateMany({
+      where: { userId: user.id, purpose, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+    const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const challenge = await tx.verificationToken.create({
+      data: {
+        userId: user.id,
+        purpose,
+        otpHash: keyedDigest(this.config.SESSION_SECRET, `${user.id}:${purpose}:${otp}`),
+        expiresAt: new Date(Date.now() + 600_000),
+      },
+    });
+    await tx.backgroundJob.create({
+      data: {
+        kind: 'EMAIL_OTP',
+        teamId: user.teamId,
+        deduplicationKey: `otp:${challenge.id}`,
+        payload: {
+          userId: user.id,
+          challengeId: challenge.id,
+          email: user.email,
+          purpose,
+          encryptedOtp: encrypt(this.config.SESSION_SECRET, otp),
+        },
+      },
+    });
+  }
+  async issueOtp(email: string, purpose: OtpPurpose) {
+    await this.otpLimits(this.db, email);
     const user = await this.db.user.findUnique({ where: { email } });
     if (
       !user ||
@@ -189,33 +280,9 @@ export class AuthService {
       return { message: 'If eligible, a code will be sent.' };
     await this.db.$transaction(async (tx) => {
       await lock(tx, 'User', user.id);
-      await tx.verificationToken.updateMany({
-        where: { userId: user.id, purpose, consumedAt: null },
-        data: { consumedAt: new Date() },
-      });
-      const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
-      const challenge = await tx.verificationToken.create({
-        data: {
-          userId: user.id,
-          purpose,
-          otpHash: keyedDigest(this.config.SESSION_SECRET, `${user.id}:${purpose}:${otp}`),
-          expiresAt: new Date(Date.now() + 600_000),
-        },
-      });
-      await tx.backgroundJob.create({
-        data: {
-          kind: 'EMAIL_OTP',
-          teamId: user.teamId,
-          deduplicationKey: `otp:${challenge.id}`,
-          payload: {
-            userId: user.id,
-            challengeId: challenge.id,
-            email: user.email,
-            purpose,
-            encryptedOtp: encrypt(this.config.SESSION_SECRET, otp),
-          },
-        },
-      });
+      const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
+      if (purpose !== 'VERIFY_EMAIL' || !current.isVerified)
+        await this.queueOtp(tx, current, purpose);
     });
     return { message: 'If eligible, a code will be sent.' };
   }
@@ -288,6 +355,12 @@ export class AuthService {
     const hash =
       (role === 'MANAGER' ? user?.passwordHash : user?.pinHash) ?? (await this.dummyHash);
     const valid = await argon2.verify(hash, pin);
+    if (user && user.role === role && valid && !user.isVerified)
+      throw new AppError(
+        403,
+        'EMAIL_VERIFICATION_REQUIRED',
+        'Verify your email before signing in.',
+      );
     if (!user || user.role !== role || !valid || !user.isVerified || !user.active) {
       await rateLimit(this.db, key, 5, 900);
       throw new AppError(

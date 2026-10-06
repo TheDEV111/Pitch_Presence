@@ -98,6 +98,11 @@ export const TEAM_TIMEZONE = 'Africa/Lagos';
 export const CURRENCY = 'NGN';
 
 // Public response contracts; server-only authentication hashes are never represented here.
+export const registrationResponse = z.object({
+  message: z.string(),
+  resendAfterSeconds: z.number().int().min(0).max(60),
+});
+export type RegistrationResponse = z.infer<typeof registrationResponse>;
 export const userResponse = z.object({
   id,
   email,

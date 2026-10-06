@@ -274,6 +274,8 @@ No action label should require inference: use **Mark present**, **Confirm extern
 
 ### 7.1 Authentication and onboarding
 
+Completed onboarding steps are recovered from the server. Before verification, keep only the pending email, role and resend deadline in per-tab session storage for at most 24 hours; never store credentials, OTPs or invitation tokens. Refresh resumes the verification screen without resetting its cooldown. Correct sign-in credentials for an unverified account lead to verification. Verified sessions resume team creation, saved invitation acceptance or the dashboard. Show **Continue email verification** on signup/sign-in and **Retry connection** when the initial session check fails. Signup retries preserve the original account and invitation; account creation and the verification email job are committed together.
+
 Desktop/tablet uses a calm field or team-huddle photograph beside a form capped at 420px. The photograph and short caption remain consistent across steps to reduce visual disruption. Mobile presents the form immediately below the wordmark.
 
 | Screen              | Content and actions                                                                                                       | Required states                                                                                                                                                     |

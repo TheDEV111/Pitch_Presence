@@ -90,7 +90,12 @@ export async function audit(
     },
   });
 }
-export async function rateLimit(db: PrismaClient, key: string, max: number, seconds: number) {
+export async function rateLimit(
+  db: PrismaClient | Prisma.TransactionClient,
+  key: string,
+  max: number,
+  seconds: number,
+) {
   const rows = await db.$queryRaw<{ count: number }[]>`
  INSERT INTO "RateLimitBucket" (key,count,"expiresAt") VALUES (${key},1,now()+${seconds}*interval '1 second')
  ON CONFLICT (key) DO UPDATE SET count=CASE WHEN "RateLimitBucket"."expiresAt"<=now() THEN 1 ELSE "RateLimitBucket".count+1 END,

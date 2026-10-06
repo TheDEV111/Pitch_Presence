@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
-import type { AuthResponse } from '@pitchpresence/shared';
-import { api, setCsrfToken } from '@/lib/api';
+import type { AuthResponse, RegistrationResponse } from '@pitchpresence/shared';
+import { api, RequestError, setCsrfToken } from '@/lib/api';
+import { pendingVerification, rememberVerification, forgetVerification } from '@/lib/onboarding';
 import { safeReturn } from '@/lib/format';
 import { Button, Feedback, Field, Logo } from './ui';
 import { Photo } from './photo';
@@ -25,6 +26,8 @@ export function AuthForm({
 }) {
   const player = ['player/sign-in', 'register', 'reset-pin'].includes(mode);
   const [authLoaded, setAuthLoaded] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [pendingEmail, setPendingEmail] = useState('');
   const [stage, setStage] = useState(
     ['register', 'signup', 'staff/join'].includes(mode)
       ? 'register'
@@ -52,14 +55,63 @@ export function AuthForm({
   const [message, setMessage] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const inviteCaptured = useRef(false);
+  const originalInvite = useRef('');
+  function verification(address: string, resendAfterSeconds?: number) {
+    const role = player ? 'PLAYER' : 'MANAGER';
+    const previous = pendingVerification(role);
+    const remaining =
+      previous?.email === address.trim().toLowerCase()
+        ? Math.max(0, Math.ceil((previous.resendAt - Date.now()) / 1000))
+        : 0;
+    const saved = rememberVerification(address, role, resendAfterSeconds ?? remaining);
+    setEmail(saved.email);
+    setPendingEmail(saved.email);
+    setCredential('');
+    setOtp('');
+    setStage('verify');
+    setCooldown(Math.max(0, Math.ceil((saved.resendAt - Date.now()) / 1000)));
+    setError(null);
+  }
+  async function loadAuth() {
+    setAuthLoaded(false);
+    setAuthError(null);
+    try {
+      const session = await api<AuthSession>('/auth/me');
+      setCsrfToken(session.csrfToken);
+      if (mode === 'staff/join') {
+        if (!originalInvite.current && session.nextStep !== 'CREATE_TEAM') {
+          forgetVerification(session.user.role, session.user.email);
+          location.replace(sessionHome(session));
+        } else setExisting(session);
+      } else if (
+        !onAuthenticated &&
+        ['signup', 'register', 'verify-email', 'sign-in', 'player/sign-in'].includes(mode)
+      ) {
+        forgetVerification(session.user.role, session.user.email);
+        location.replace(sessionHome(session));
+      }
+    } catch (e) {
+      if (!(e instanceof RequestError && e.status === 401)) setAuthError((e as Error).message);
+    } finally {
+      setAuthLoaded(true);
+    }
+  }
   useEffect(() => {
-    void api<AuthSession>('/auth/me')
-      .then((session) => {
-        setCsrfToken(session.csrfToken);
-        if (mode === 'staff/join') setExisting(session);
-      })
-      .catch(() => {})
-      .finally(() => setAuthLoaded(true));
+    originalInvite.current = new URLSearchParams(location.search).get('invite') ?? '';
+    const saved = pendingVerification(player ? 'PLAYER' : 'MANAGER');
+    if (saved) {
+      setPendingEmail(saved.email);
+      if (
+        ['signup', 'register', 'staff/join', 'verify-email'].includes(mode) &&
+        !new URLSearchParams(location.search).has('invite')
+      ) {
+        setEmail(saved.email);
+        setStage('verify');
+        setCooldown(Math.max(0, Math.ceil((saved.resendAt - Date.now()) / 1000)));
+        setMessage('Continue your email verification. Use your latest code, or request a new one.');
+      }
+    }
+    void loadAuth();
   }, [mode]);
   useEffect(() => {
     if (['register', 'staff/join'].includes(mode) && !inviteCaptured.current) {
@@ -94,8 +146,17 @@ export function AuthForm({
   }, [cooldown]);
   async function authenticated(session: AuthSession) {
     setCsrfToken(session.csrfToken);
+    forgetVerification(session.user.role, session.user.email);
     if (!player && invite) {
-      await api('/auth/staff-invitation/accept', { method: 'POST', body: { token: invite } });
+      try {
+        await api('/auth/staff-invitation/accept', { method: 'POST', body: { token: invite } });
+      } catch (e) {
+        if (session.nextStep === 'ACCEPT_INVITATION') {
+          location.assign('/onboarding/staff-invitation');
+          return;
+        }
+        throw e;
+      }
       session = await api<AuthSession>('/auth/me');
     }
     if (onAuthenticated) onAuthenticated(session);
@@ -125,16 +186,22 @@ export function AuthForm({
           }),
         );
       else if (stage === 'register') {
-        await api(player ? '/auth/register' : '/auth/staff-register', {
-          method: 'POST',
-          body: player
-            ? { name, email, pin: credential, invitationToken: invite }
-            : { name, email, password: credential, ...(invite ? { invitationToken: invite } : {}) },
-        });
-        setCredential('');
-        setStage('verify');
-        setCooldown(60);
-        setMessage('Check your email for your verification code.');
+        const result = await api<RegistrationResponse>(
+          player ? '/auth/register' : '/auth/staff-register',
+          {
+            method: 'POST',
+            body: player
+              ? { name, email, pin: credential, invitationToken: invite }
+              : {
+                  name,
+                  email,
+                  password: credential,
+                  ...(invite ? { invitationToken: invite } : {}),
+                },
+          },
+        );
+        verification(email, result.resendAfterSeconds ?? 60);
+        setMessage(result.message);
       } else if (stage === 'verify')
         await authenticated(
           await api<AuthSession>('/auth/verify-email', { method: 'POST', body: { email, otp } }),
@@ -155,7 +222,14 @@ export function AuthForm({
         setMessage(`${player ? 'PIN' : 'Password'} changed. Sign in again on your devices.`);
       }
     } catch (e) {
-      setError((e as Error).message);
+      if (
+        stage === 'login' &&
+        e instanceof RequestError &&
+        e.code === 'EMAIL_VERIFICATION_REQUIRED'
+      ) {
+        verification(email);
+        setMessage('Your account is saved. Enter your latest email code, or request a new one.');
+      } else setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -168,7 +242,8 @@ export function AuthForm({
         method: 'POST',
         body: { email },
       });
-      setCooldown(60);
+      if (stage === 'verify') verification(email, 60);
+      else setCooldown(60);
       setMessage('A new code has been requested. Check your email.');
     } catch (e) {
       setError((e as Error).message);
@@ -176,7 +251,8 @@ export function AuthForm({
       setBusy(false);
     }
   }
-  const needsInvite = ['register', 'staff/join'].includes(mode) && (!invite || invalidInvite);
+  const needsInvite =
+    stage !== 'verify' && ['register', 'staff/join'].includes(mode) && (!invite || invalidInvite);
   return (
     <div className="auth-form">
       <p className="eyebrow">
@@ -209,7 +285,12 @@ export function AuthForm({
               ? 'Enter the six-digit code from your email. You can return here to finish verification.'
               : 'Recover your account with a code sent to your email.'}
       </p>
-      <Feedback error={error} success={message} />
+      <Feedback error={error ?? authError} success={message} />
+      {authError && (
+        <Button variant="secondary" onClick={loadAuth}>
+          Retry connection
+        </Button>
+      )}
       {existing && mode === 'staff/join' ? (
         <div className="form-stack">
           <p>Signed in as {existing.user.email}.</p>
@@ -330,7 +411,7 @@ export function AuthForm({
               Forgot your {resetKind}?
             </Link>
           )}
-          <Button type="submit" busy={busy} disabled={!authLoaded}>
+          <Button type="submit" busy={busy} disabled={!authLoaded || !!authError}>
             {stage === 'login'
               ? 'Sign in'
               : stage === 'register'
@@ -348,23 +429,22 @@ export function AuthForm({
               type="button"
               variant="secondary"
               onClick={resend}
-              disabled={cooldown > 0 || busy}
+              disabled={cooldown > 0 || busy || !authLoaded || !!authError}
             >
               {cooldown ? `Resend code in ${cooldown}s` : 'Resend email code'}
             </Button>
           )}
         </form>
       )}
-      {stage === 'login' && (
+      {['login', 'register'].includes(stage) && (
         <button
           className="text-action"
           onClick={() => {
-            setStage('verify');
-            setCredential('');
+            verification(email || pendingEmail);
             setMessage('Enter your email and request a new verification code.');
           }}
         >
-          Verify your email
+          {pendingEmail ? 'Continue email verification' : 'Verify your email'}
         </button>
       )}
       {mode === 'staff/join' && !existing && (
