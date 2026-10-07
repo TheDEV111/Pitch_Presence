@@ -187,7 +187,9 @@ test('signup retries a lost response and offers verification for an existing acc
   const state = await mockOnboarding(page, { lostSignup: true });
   await page.goto('/signup');
   await signup(page);
-  await expect(page.getByRole('alert')).toContainText('Unable to connect');
+  await expect(page.getByRole('alert').filter({ hasText: 'Unable to connect' })).toContainText(
+    'Unable to connect',
+  );
   await page.getByRole('button', { name: 'Create staff account' }).click();
   await expect(page.getByLabel('Six-digit email code')).toBeVisible();
   expect(state.signupRequests).toBe(2);
@@ -196,7 +198,9 @@ test('signup retries a lost response and offers verification for an existing acc
   await mockOnboarding(page, { duplicate: true });
   await page.goto('/signup');
   await signup(page);
-  await expect(page.getByRole('alert')).toContainText('An account already uses this email');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'An account already uses this email' }),
+  ).toContainText('An account already uses this email');
   await page.getByRole('button', { name: 'Verify your email', exact: true }).click();
   await expect(page.getByLabel('Six-digit email code')).toBeVisible();
 });
@@ -228,7 +232,9 @@ test('a lost team creation response can be retried without another team', async 
   await expect(page).toHaveURL(/\/onboarding\/team$/);
   await page.getByLabel('Team name').fill(team.name);
   await page.getByRole('button', { name: 'Create team', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Unable to connect');
+  await expect(page.getByRole('alert').filter({ hasText: 'Unable to connect' })).toContainText(
+    'Unable to connect',
+  );
   await page.getByRole('button', { name: 'Create team', exact: true }).click();
   await expect(page).toHaveURL(/\/management$/);
   expect(state.teamWrites).toBe(1);

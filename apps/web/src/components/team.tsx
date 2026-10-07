@@ -1,5 +1,5 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import type { OverviewResponse, TeamSettingsResponse, UserResponse } from '@pitchpresence/shared';
 import { api } from '@/lib/api';
 import { dateLabel } from '@/lib/format';
@@ -114,6 +114,7 @@ export function TeamOnboarding({ session }: { session: AuthSession }) {
   );
 }
 export function TeamSettingsPage() {
+  const bankFieldId = useId();
   const settings = useResource<TeamSettings>('/management/team');
   const staff = useCollection<UserResponse>('/management/staff');
   const invitations = useCollection<{
@@ -340,8 +341,10 @@ export function TeamSettingsPage() {
               <>
                 <form className="form-stack" onSubmit={resolve}>
                   <label className="field">
-                    <span>Bank</span>
+                    <span id={`${bankFieldId}-label`}>Bank</span>
                     <select
+                      aria-labelledby={`${bankFieldId}-label`}
+                      aria-describedby={`${bankFieldId}-help`}
                       required
                       disabled={!banksAvailable || busy}
                       value={bankCode}
@@ -360,7 +363,7 @@ export function TeamSettingsPage() {
                         </option>
                       ))}
                     </select>
-                    <small>
+                    <small id={`${bankFieldId}-help`}>
                       Choose the bank that will receive your team’s dues through Paystack.
                     </small>
                   </label>

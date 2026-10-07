@@ -24,11 +24,11 @@ test('landing explains the product and keeps animation under user control', asyn
   );
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toContainText('MORE');
-  await expect(page.getByRole('button', { name: 'Play walkthrough' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Play walkthrough', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Dues', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'A month sorted.' })).toBeVisible();
   await page.getByRole('button', { name: 'Attendance', exact: true }).click();
-  await page.getByRole('button', { name: 'Play walkthrough' }).click();
+  await page.getByRole('button', { name: 'Play walkthrough', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
@@ -190,8 +190,24 @@ test('landing fits mobile, tablet, and desktop widths', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await expect
-      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
-      .toBe(true);
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            fits: document.documentElement.scrollWidth <= window.innerWidth,
+            viewportWidth: window.innerWidth,
+            contentWidth: document.documentElement.scrollWidth,
+            overflowingElements: Array.from(document.querySelectorAll('body *'))
+              .filter((element) => element.getBoundingClientRect().right > window.innerWidth)
+              .slice(0, 12)
+              .map((element) => ({
+                tag: element.tagName,
+                class: element.getAttribute('class'),
+                right: element.getBoundingClientRect().right,
+              })),
+          })),
+        { message: `Landing content must fit a ${width}px viewport` },
+      )
+      .toMatchObject({ fits: true });
   }
 });
 
@@ -405,7 +421,9 @@ test('staff resolve and confirm a bank, reauthenticate, and stay signed in after
   await page.getByRole('checkbox').check();
   await page.getByLabel('Confirm your password').fill('wrong');
   await page.getByRole('button', { name: 'Connect team bank account', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Check your password');
+  await expect(page.getByRole('alert').filter({ hasText: 'Check your password' })).toContainText(
+    'Check your password',
+  );
   await expect(page.getByLabel('Confirm your password')).toBeVisible();
   await page.getByLabel('Confirm your password').fill('a memorable coach passphrase');
   await page.getByRole('button', { name: 'Connect team bank account', exact: true }).click();
