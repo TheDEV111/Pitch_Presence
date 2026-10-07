@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { MediaToolError } from './media-diagnostics.mjs';
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const publicFolder = join(root, 'apps/web/public');
 export const sourceFolder = join(root, '.media-source');
@@ -12,18 +13,19 @@ export async function run(command, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
+    let diagnostic = '';
     child.stdout.on('data', (chunk) => {
       output += chunk;
     });
-    // Tool failures are summarized; do not dump source URLs or arbitrary subprocess buffers.
-    child.stderr.resume();
+    // Retain a bounded tail to classify failures, never print arbitrary tool output.
+    child.stderr.on('data', (chunk) => {
+      diagnostic = (diagnostic + chunk).slice(-16384);
+    });
     child.on('error', () =>
       reject(new Error(`${command} is unavailable. Install the documented media tools.`)),
     );
     child.on('close', (code) =>
-      code === 0
-        ? resolve(output)
-        : reject(new Error(`${command} failed. Check the inputs and installed codecs.`)),
+      code === 0 ? resolve(output) : reject(new MediaToolError(command, code, diagnostic)),
     );
   });
 }

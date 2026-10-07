@@ -1,16 +1,17 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { chromium } from '@playwright/test';
 import { loadVideoMaster } from './video-master.mjs';
 import { sourceFolder, publicFolder, workFolder, digest, probe, run } from './media-tools.mjs';
+import { mediaStep, failureReport } from './media-diagnostics.mjs';
 
 async function screenshots() {
   const base = process.env.MEDIA_PREVIEW_URL ?? 'http://127.0.0.1:3000';
   const origin = new URL(base).origin;
   if (!['http:', 'https:'].includes(new URL(base).protocol))
     throw new Error('Invalid preview URL.');
-  const browser = await chromium.launch();
+  const browser = await mediaStep('Launching Chromium', () => chromium.launch());
   try {
     const page = await browser.newPage({
       viewport: { width: 1440, height: 1000 },
@@ -27,15 +28,21 @@ async function screenshots() {
         });
       return route.continue();
     });
-    await page.goto(base);
-    await page.evaluate(() => document.fonts.ready);
-    await page.locator('.walkthrough').scrollIntoViewIfNeeded();
+    await mediaStep('Opening the landing page', () => page.goto(base));
+    await mediaStep('Loading demo fonts and walkthrough', async () => {
+      await page.evaluate(() => document.fonts.ready);
+      await page.locator('.walkthrough').scrollIntoViewIfNeeded();
+    });
     for (const scene of [1, 2, 3]) {
-      await page.locator('.story-steps button').nth(scene).click();
-      await page.locator(`.demo-phone.scene-${scene}`).waitFor({ state: 'visible' });
-      await page
-        .locator(scene === 1 ? '.demo-desktop' : '.demo-phone')
-        .screenshot({ path: join(workFolder, `scene-${scene}.png`), animations: 'disabled' });
+      await mediaStep(`Selecting demo scene ${scene}`, async () => {
+        await page.locator('.story-steps button').nth(scene).click();
+        await page.locator(`.demo-phone.scene-${scene}`).waitFor({ state: 'visible' });
+      });
+      await mediaStep(`Capturing demo scene ${scene}`, () =>
+        page
+          .locator(scene === 1 ? '.demo-desktop' : '.demo-phone')
+          .screenshot({ path: join(workFolder, `scene-${scene}.png`), animations: 'disabled' }),
+      );
     }
   } finally {
     await browser.close();
@@ -43,15 +50,22 @@ async function screenshots() {
 }
 
 async function main() {
-  await run('ffmpeg', ['-version']);
-  await run('ffprobe', ['-version']);
   await mkdir(sourceFolder, { recursive: true });
   await mkdir(workFolder, { recursive: true });
+  await rm(join(workFolder, 'render-failure.json'), { force: true });
+  await mediaStep('Checking FFmpeg', () => run('ffmpeg', ['-version']));
+  await mediaStep('Checking FFprobe', () => run('ffprobe', ['-version']));
+  await mediaStep('Checking the caption font', () => readFile(join(sourceFolder, 'Antonio.ttf')));
   const folder = join(publicFolder, 'media');
-  const register = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
+  const register = await mediaStep('Reading the asset register', async () =>
+    JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8')),
+  );
   const masters = [];
-  for (const asset of register.videos) masters.push(await loadVideoMaster(asset));
-  await screenshots();
+  for (const [index, asset] of register.videos.entries())
+    masters.push(
+      await mediaStep(`Preparing video master ${index + 1}`, () => loadVideoMaster(asset)),
+    );
+  await mediaStep('Capturing the product walkthrough', screenshots);
   const captions = [
     'MORE FOOTBALL.',
     'OPEN TRAINING ATTENDANCE.',
@@ -71,14 +85,16 @@ async function main() {
       const args = ['-y', '-ss', String(asset.trimStart), '-i', masters[input]];
       if (scene) {
         const panel = join(workFolder, `${variant}-panel-${scene}.png`);
-        await sharp(join(workFolder, `scene-${scene}.png`))
-          .resize({
-            width: variant === 'mobile' ? 590 : scene === 1 ? 1150 : 470,
-            height: variant === 'mobile' ? 610 : 740,
-            fit: 'inside',
-          })
-          .png()
-          .toFile(panel);
+        await mediaStep(`Preparing ${variant} overlay ${scene}`, () =>
+          sharp(join(workFolder, `scene-${scene}.png`))
+            .resize({
+              width: variant === 'mobile' ? 590 : scene === 1 ? 1150 : 470,
+              height: variant === 'mobile' ? 610 : 740,
+              fit: 'inside',
+            })
+            .png()
+            .toFile(panel),
+        );
         args.push('-loop', '1', '-i', panel);
       }
       const font = join(sourceFolder, 'Antonio.ttf');
@@ -109,7 +125,7 @@ async function main() {
         'yuv420p',
         clip,
       );
-      await run('ffmpeg', args);
+      await mediaStep(`Encoding ${variant} scene ${scene + 1}`, () => run('ffmpeg', args));
       clips.push(clip);
     }
     const list = join(workFolder, `${variant}-concat.txt`);
@@ -119,30 +135,42 @@ async function main() {
     );
     const file = `hero-${variant}.mp4`;
     const output = join(folder, file);
-    await run('ffmpeg', [
-      '-y',
-      '-f',
-      'concat',
-      '-safe',
-      '0',
-      '-i',
-      list,
-      '-c',
-      'copy',
-      '-movflags',
-      '+faststart',
-      output,
-    ]);
-    const metadata = await probe(output);
+    await mediaStep(`Joining ${variant} scenes`, () =>
+      run('ffmpeg', [
+        '-y',
+        '-f',
+        'concat',
+        '-safe',
+        '0',
+        '-i',
+        list,
+        '-c',
+        'copy',
+        '-movflags',
+        '+faststart',
+        output,
+      ]),
+    );
+    const metadata = await mediaStep(`Inspecting ${variant} export`, () => probe(output));
     const bytes = await readFile(output);
     const budget = variant === 'mobile' ? 1500000 : 3000000;
-    if (bytes.length > budget || Math.abs(Number(metadata.format.duration) - 12) > 0.15)
-      throw new Error(`Film ${variant} failed size/duration acceptance.`);
+    await mediaStep(`Validating ${variant} export size and duration`, async () => {
+      if (
+        bytes.length > budget ||
+        !Number.isFinite(Number(metadata.format.duration)) ||
+        Math.abs(Number(metadata.format.duration) - 12) > 0.15
+      )
+        throw new Error(`Film ${variant} failed size/duration acceptance.`);
+    });
     const poster = join(workFolder, `${variant}-poster.png`);
-    await run('ffmpeg', ['-y', '-i', output, '-frames:v', '1', poster]);
-    await sharp(poster)
-      .webp({ quality: 76 })
-      .toFile(join(folder, `hero-${variant}-poster.webp`));
+    await mediaStep(`Extracting ${variant} poster`, () =>
+      run('ffmpeg', ['-y', '-i', output, '-frames:v', '1', poster]),
+    );
+    await mediaStep(`Finishing ${variant} poster`, () =>
+      sharp(poster)
+        .webp({ quality: 76 })
+        .toFile(join(folder, `hero-${variant}-poster.webp`)),
+    );
     outputs.push({
       file,
       width,
@@ -168,16 +196,18 @@ async function main() {
   await writeFile(filmPath, JSON.stringify({ ...film, ready: true }, null, 2) + '\n');
   console.log('Film exports ready. Run media:verify and rebuild the frontend.');
 }
-main().catch((error) => {
-  if (
-    error instanceof Error &&
-    /^(Download the licensed|Invalid or undersized|Video master changed|ffmpeg is unavailable|ffprobe is unavailable)/.test(
-      error.message,
-    )
-  )
-    console.error(error.message);
-  console.error(
-    'Film could not complete. Requires FFmpeg/FFprobe, licensed masters, local fonts, Chromium and a running preview. Existing poster/photography remains available. See docs/frontend/pwa-media.md.',
-  );
+main().catch(async (error) => {
+  const report = failureReport(error);
+  console.error(`Film failed at: ${report.stage}. ${report.message}`);
+  try {
+    await mkdir(workFolder, { recursive: true });
+    await writeFile(
+      join(workFolder, 'render-failure.json'),
+      JSON.stringify(report, null, 2) + '\n',
+    );
+  } catch {
+    console.error('The renderer could not write its diagnostic report.');
+  }
+  console.error('See docs/frontend/pwa-media.md for media setup and recovery.');
   process.exitCode = 1;
 });

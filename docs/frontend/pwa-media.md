@@ -62,6 +62,14 @@ push assets. A blocked stock download fails explicitly rather than substituting
 unrelated footage. The local environment could not download masters or execute
 Chromium, so media generation and visual acceptance must finish on that runner.
 
+If film rendering fails, the log identifies the last media stage and a safe error
+summary. Download the `media-render-failure` artifact for the same stage/message in
+`render-failure.json`. It contains no raw browser or FFmpeg logs, source URLs or
+credentials. Missing input/font errors require rerunning `media:sync`; Chromium
+errors require installing the documented browser dependencies. The workflow stops
+before rendering if its preview server exits or fails to become ready. Browser
+traces are uploaded only after a failed browser test that actually produced reports.
+
 The film uses the existing fictional demo components captured through Playwright;
 all API requests are intercepted and external browser requests blocked. Its four
 three-second scenes show warm-up, opened attendance, recorded arrival and monthly
