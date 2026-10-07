@@ -16,6 +16,9 @@ const user = {
 };
 const team = { id: user.teamId, name: 'Touchline FC', createdAt: '2026-10-02T07:00:00.000Z' };
 const auth = { user, team, nextStep: 'READY', csrfToken: 'pwa-test' };
+const signedOut = {
+  error: { code: 'AUTH_REQUIRED', message: 'Sign in.', requestId: 'pwa' },
+};
 
 test('installed launch offers both roles and resumes the server-selected workspace', async ({
   page,
@@ -109,6 +112,7 @@ test('the worker preserves HTTP failures and manifest install icons are availabl
   page,
   request,
 }) => {
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
   const manifest = await (await request.get('/manifest.webmanifest')).json();
   expect(manifest.start_url).toBe('/launch');
   expect(manifest.scope).toBe('/');
@@ -155,16 +159,64 @@ test('finished hero film loads only after play and pauses for user control', asy
     !film.ready,
     'Actual video exports are required; run the media workflow before release.',
   );
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
   const videoRequests: string[] = [];
   page.on('request', (request) => {
     if (/hero-(desktop|mobile)\.mp4/.test(request.url())) videoRequests.push(request.url());
   });
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Play film', exact: true })).toBeVisible();
+  const video = page.getByLabel('PitchPresence training-day film');
+  await expect(video).not.toHaveAttribute('src');
+  const controls = await page.locator('.film-controls').boundingBox();
+  const description = await page.locator('.film-description').boundingBox();
+  expect(controls).not.toBeNull();
+  expect(description).not.toBeNull();
+  expect(description!.y).toBeGreaterThanOrEqual(controls!.y + controls!.height);
   expect(videoRequests).toHaveLength(0);
   await page.getByRole('button', { name: 'Play film', exact: true }).click();
+  await expect
+    .poll(() =>
+      video.evaluate((element: HTMLVideoElement) => ({
+        paused: element.paused,
+        errorCode: element.error?.code ?? null,
+      })),
+    )
+    .toEqual({ paused: false, errorCode: null });
   await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toBeVisible();
+  await expect
+    .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime))
+    .toBeGreaterThan(0);
+  await expect(video).toHaveJSProperty('paused', false);
   expect(videoRequests.length).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Pause film', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Play film', exact: true })).toBeVisible();
+  await expect(video).toHaveJSProperty('paused', true);
+  await page.getByRole('button', { name: 'Replay film', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toBeVisible();
+});
+
+test('an interrupted film play remains retryable without the failure fallback', async ({
+  page,
+}) => {
+  test.skip(!film.ready, 'Actual video exports are required.');
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
+  await page.addInitScript(() => {
+    const original = HTMLMediaElement.prototype.play;
+    let interrupted = false;
+    HTMLMediaElement.prototype.play = function () {
+      if (!interrupted) {
+        interrupted = true;
+        return Promise.reject(new DOMException('Playback interrupted by a pause.', 'AbortError'));
+      }
+      return original.call(this);
+    };
+  });
+  await page.goto('/');
+  const play = page.getByRole('button', { name: 'Play film', exact: true });
+  await play.click();
+  await expect(play).toBeEnabled();
+  await expect(page.getByText('The film could not play.')).not.toBeVisible();
+  await play.click();
+  await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toBeVisible();
 });
