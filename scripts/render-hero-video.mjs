@@ -5,6 +5,16 @@ import { chromium } from '@playwright/test';
 import { loadVideoMaster } from './video-master.mjs';
 import { sourceFolder, publicFolder, workFolder, digest, probe, run } from './media-tools.mjs';
 import { mediaStep, failureReport } from './media-diagnostics.mjs';
+import {
+  VARIANTS,
+  FPS,
+  SCENE_SECONDS,
+  SCENE_FRAMES,
+  sceneFilter,
+  timingArgs,
+  assertSceneTiming,
+  finishFilm,
+} from './hero-video-encoding.mjs';
 
 async function screenshots() {
   const base = process.env.MEDIA_PREVIEW_URL ?? 'http://127.0.0.1:3000';
@@ -73,10 +83,8 @@ async function main() {
     'LESS ADMIN.',
   ];
   const outputs = [];
-  for (const [variant, width, height, rate] of [
-    ['desktop', 1920, 1080, '1900k'],
-    ['mobile', 720, 900, '900k'],
-  ]) {
+  for (const spec of VARIANTS) {
+    const { name: variant, width, height } = spec;
     const clips = [];
     for (let scene = 0; scene < 4; scene++) {
       const input = scene === 1 ? 1 : 0;
@@ -95,21 +103,18 @@ async function main() {
             .png()
             .toFile(panel),
         );
-        args.push('-loop', '1', '-i', panel);
+        args.push('-loop', '1', '-framerate', String(FPS), '-i', panel);
       }
       const font = join(sourceFolder, 'Antonio.ttf');
       const base = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,fps=24,drawbox=x=0:y=0:w=iw:h=${variant === 'mobile' ? 130 : 170}:color=0x103c29@0.95:t=fill,drawtext=fontfile=${font}:text='${captions[scene]}':fontcolor=white:fontsize=${variant === 'mobile' ? 34 : 64}:x=40:y=42`;
       const foot = `drawtext=fontfile=${font}:text='PitchPresence.  Product demo':fontcolor=white:fontsize=${variant === 'mobile' ? 24 : 36}:x=40:y=h-55:box=1:boxcolor=0x103c29@0.9:boxborderw=12`;
-      const filter = scene
-        ? `[0:v]${base}[base];[base][1:v]overlay=x=(W-w)/2:y=(H-h)/2+35,${foot}[out]`
-        : `[0:v]${base},${foot}[out]`;
+      const filter = sceneFilter(base, foot, Boolean(scene));
       args.push(
         '-filter_complex',
         filter,
         '-map',
         '[out]',
-        '-t',
-        '3',
+        ...timingArgs(SCENE_FRAMES),
         '-an',
         '-c:v',
         'libx264',
@@ -118,49 +123,33 @@ async function main() {
         '-crf',
         '26',
         '-maxrate',
-        rate,
+        spec.maxRate,
         '-bufsize',
-        variant === 'mobile' ? '1800k' : '3800k',
+        spec.buffer,
         '-pix_fmt',
         'yuv420p',
         clip,
       );
       await mediaStep(`Encoding ${variant} scene ${scene + 1}`, () => run('ffmpeg', args));
+      await mediaStep(`Validating ${variant} scene ${scene + 1} timing`, async () =>
+        assertSceneTiming(await probe(clip)),
+      );
       clips.push(clip);
     }
     const list = join(workFolder, `${variant}-concat.txt`);
     await writeFile(
       list,
-      clips.map((path) => `file '${path.replaceAll("'", "'\\''")}'`).join('\n') + '\n',
+      clips
+        .map((path) => `file '${path.replaceAll("'", "'\\''")}'\nduration ${SCENE_SECONDS}`)
+        .join('\n') + '\n',
     );
     const file = `hero-${variant}.mp4`;
     const output = join(folder, file);
-    await mediaStep(`Joining ${variant} scenes`, () =>
-      run('ffmpeg', [
-        '-y',
-        '-f',
-        'concat',
-        '-safe',
-        '0',
-        '-i',
-        list,
-        '-c',
-        'copy',
-        '-movflags',
-        '+faststart',
-        output,
-      ]),
-    );
-    const metadata = await mediaStep(`Inspecting ${variant} export`, () => probe(output));
-    const bytes = await readFile(output);
-    const budget = variant === 'mobile' ? 1500000 : 3000000;
-    await mediaStep(`Validating ${variant} export size and duration`, async () => {
-      if (
-        bytes.length > budget ||
-        !Number.isFinite(Number(metadata.format.duration)) ||
-        Math.abs(Number(metadata.format.duration) - 12) > 0.15
-      )
-        throw new Error(`Film ${variant} failed size/duration acceptance.`);
+    const { info: metadata, bytes } = await finishFilm({
+      variant: spec,
+      concatFile: list,
+      output,
+      passLog: join(workFolder, `${variant}-two-pass`),
     });
     const poster = join(workFolder, `${variant}-poster.png`);
     await mediaStep(`Extracting ${variant} poster`, () =>

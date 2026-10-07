@@ -75,6 +75,12 @@ all API requests are intercepted and external browser requests blocked. Its four
 three-second scenes show warm-up, opened attendance, recorded arrival and monthly
 dues. Demo QR artwork is not scannable. Exports are silent H.264/yuv420p at 24fps:
 1920×1080 desktop (≤3MB), 720×900 mobile (≤1.5MB), with responsive WebP posters.
+Each scene is exactly 72 frames with a shared 24fps MP4 time base; the film is 288
+frames. Logs and failure reports include actual bytes, duration and frame counts.
+Oversized exports receive a two-pass encode with a bitrate derived from their
+size budget, reserving 15% for container overhead and bitrate variation. The size
+and timing checks still reject outputs that exceed their limits. The media workflow
+runs a synthetic mixed-frame-rate/overlay encoding test before capturing the film.
 FFmpeg uses fast-start MP4 delivery. Playback begins only after Play; pause/replay,
 visibility handling and text description accompany it. The interactive walkthrough
 remains available. `film.json.ready` becomes true only after both exports finish;
