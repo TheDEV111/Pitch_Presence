@@ -1,8 +1,17 @@
 name: Monorepo checks
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -12,26 +21,51 @@ jobs:
           POSTGRES_DB: pitchpresence_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U pitchpresence"
+          --health-cmd "pg_isready -U pitchpresence -d pitchpresence_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql://pitchpresence:pitchpresence@localhost:5432/pitchpresence_test
       TEST_DATABASE_URL: postgresql://pitchpresence:pitchpresence@localhost:5432/pitchpresence_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run db:generate
-      - run: npm run db:deploy
-      - run: npm run build
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:web
-      - run: npm run docs:generate
-      - run: git diff --exit-code -- docs/backend/openapi.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Generate Prisma client
+        run: npm run db:generate
+      - name: Check lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
+      - name: Apply database migrations
+        run: npm run db:deploy
+      - name: Build all workspaces
+        run: npm run build
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Run unit and PostgreSQL integration tests
+        run: npm test
+      - name: Check generated API documentation
+        run: |
+          npm run docs:generate
+          git diff --exit-code -- docs/backend/openapi.json
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Run desktop and mobile browser tests
+        id: browser-tests
+        run: npm run test:web
+      - name: Upload browser report and failure traces
+        if: always() && steps.browser-tests.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: warn

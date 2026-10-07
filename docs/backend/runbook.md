@@ -52,6 +52,28 @@ Embedded tests exercise the committed PostgreSQL migration and application flows
 
 Migration `20261002010000_tenants` requires empty pre-launch tables. Existing single-team development data is not backfilled. After checking DATABASE_URL and retaining anything needed, run `npm run db:reset:development -- --confirm-development-data-loss` with NODE_ENV=development. This explicitly drops development data and applies migrations. Never run it on production/staging or during startup. A populated production database requires a separate backfill plan before this migration.
 
+## Restart onboarding tests with empty app data
+
+For a database containing only disposable test data, stop the API and worker and run from the repository root:
+
+```sh
+npm run db:clear:test -- --confirm-test-data-loss
+```
+
+Requires `NODE_ENV=development` in `.env`. The command uses `DATABASE_URL`, including a hosted Supabase database if configured; localhost in the browser does not imply a local database. It refuses to run with live Paystack credentials. All 16 app tables are truncated together in one transaction, including accounts, teams, invitations, training, dues, payments, bank profiles, audit events, verification tokens, device sessions, queued jobs, idempotency records, and rate limits. The schema, constraints, indexes, triggers, migration history, and unrelated tables remain intact. External Resend messages and Paystack subaccounts are not removed.
+
+If the terminal cannot reach the database, run the contents of `scripts/clear-test-data.sql` in the intended Supabase project's SQL editor after stopping the API and worker. This SQL is the same destructive cleanup and is only for disposable test data. Successful execution returns zero accounts, teams, training sessions, and queued jobs.
+
+For `SELF_SIGNED_CERT_IN_CHAIN`, Node cannot verify the database certificate using its current trusted CAs. Download the database CA certificate from **Database Settings → SSL Configuration** in the intended Supabase project, then pass its local path:
+
+```sh
+npm run db:clear:test -- --confirm-test-data-loss --ssl-root-cert="$HOME/Downloads/prod-ca-2021.crt"
+```
+
+Use the actual downloaded filename if different. This option enables `sslmode=verify-full` and supplies `sslrootcert` to node-postgres; server certificate and hostname checks stay enabled. The cleanup normalizes `sslmode=require` to `verify-full` to preserve the installed driver's current behavior without its deprecation warning. It does not modify `.env` or the API's Prisma connection. See [Supabase's SSL configuration guidance](https://supabase.com/docs/guides/platform/ssl-enforcement) and [node-postgres SSL configuration](https://node-postgres.com/features/ssl). If a correct project certificate still fails verification, use the SQL Editor fallback to finish these tests, and investigate the certificate chain before further CLI operations.
+
+Restart `make start` and `make worker`, then use a fresh private browser window. Old cookies point to deleted device sessions, and existing tabs may retain pending-verification email hints in session storage. You can reuse test email addresses, but use newly issued OTPs and invitation links. To test recovery, keep the same browser tab/session open and refresh or navigate away after signup; closing the tab intentionally removes the browser's recovery hint.
+
 ## Bank connection recovery
 
 A PENDING/REVIEW bank profile can reflect a provider success followed by a lost response. Use `/management/bank/reconcile` to find its immutable profile ID in Paystack subaccount metadata. Do not create another subaccount until the outcome is established. If none is found or the provider destination is inactive/mismatched, keep REVIEW and investigate through Paystack support/operator tooling. If manual intervention becomes necessary, record team, profile ID, reason and operator in the append-only audit log; do not edit a READY destination or historical payment snapshots. Validate fee routing and account resolution with Paystack test credentials before live use. Team managers must confirm they are authorised to receive team dues; resolution alone is not ownership verification.

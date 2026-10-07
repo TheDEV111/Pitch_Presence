@@ -31,7 +31,8 @@
     "build:backend": "npm run build -w @pitchpresence/shared && npm run build -w @pitchpresence/database && npm run build -w @pitchpresence/api",
     "media:sync": "node scripts/sync-media.mjs",
     "test:web": "playwright test",
-    "db:reset:development": "node --env-file=.env scripts/reset-development.mjs"
+    "db:reset:development": "node --env-file=.env scripts/reset-development.mjs",
+    "db:clear:test": "node --env-file=.env scripts/clear-test-data.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.15",
