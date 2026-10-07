@@ -1,9 +1,21 @@
 {
   "name": "PitchPresence",
   "short_name": "PitchPresence",
-  "start_url": "/home",
+  "id": "/",
+  "description": "Football training attendance and monthly dues for your team.",
+  "start_url": "/launch",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#fff9f1",
   "theme_color": "#195c3c",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }

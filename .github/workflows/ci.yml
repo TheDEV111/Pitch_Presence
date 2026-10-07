@@ -38,14 +38,20 @@ jobs:
         run: npm ci
       - name: Generate Prisma client
         run: npm run db:generate
+      - name: Check tracked files for GitHub tokens
+        run: npm run security:check
       - name: Check lint
         run: npm run lint
       - name: Check formatting
         run: npm run format:check
+      - name: Verify PWA installation icons
+        run: npm run media:verify -- --icons-only
       - name: Apply database migrations
         run: npm run db:deploy
       - name: Build all workspaces
         run: npm run build
+      - name: Check browser build for GitHub tokens
+        run: npm run security:check:browser
       - name: Check TypeScript
         run: npm run typecheck
       - name: Run unit and PostgreSQL integration tests

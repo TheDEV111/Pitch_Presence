@@ -14,6 +14,7 @@ import {
 import { Logo, ActionLink, Status } from './ui';
 import { Photo } from './photo';
 import { Walkthrough } from './walkthrough';
+import { HeroFilm } from './hero-film';
 import { api } from '@/lib/api';
 import { sessionHome, type AuthSession } from './auth';
 export function Landing() {
@@ -101,20 +102,10 @@ export function Landing() {
             <p className="hero-footnote">Built around your team. Ready for training day.</p>
           </div>
           <div className="hero-media">
-            <Photo eager />
+            <HeroFilm />
             <div className="media-tag">
               <span className="live-dot" /> A LITTLE STRUCTURE. A LOT MORE GAME.
             </div>
-            <div className="floating-arrival">
-              <span className="check-circle">
-                <Check size={19} />
-              </span>
-              <div>
-                <strong>One less thing to keep track of.</strong>
-                <small>Attendance. Dues. All together.</small>
-              </div>
-            </div>
-            <span className="photo-caption">THE GAME STARTS BEFORE KICK-OFF.</span>
           </div>
         </section>
         <div className="value-strip container">

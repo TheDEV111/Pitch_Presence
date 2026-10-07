@@ -1,0 +1,9 @@
+{
+  "ready": false,
+  "duration": 12,
+  "desktop": "/media/hero-desktop.mp4",
+  "mobile": "/media/hero-mobile.mp4",
+  "desktopPoster": "/media/hero-desktop-poster.webp",
+  "mobilePoster": "/media/hero-mobile-poster.webp",
+  "description": "A football warm-up, a coach opening attendance, a demo player’s recorded arrival, and a monthly dues summary. More football. Less admin."
+}

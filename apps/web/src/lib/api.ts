@@ -19,6 +19,8 @@ export async function api<T>(
   options: { method?: string; body?: unknown; key?: string; signal?: AbortSignal } = {},
 ): Promise<T> {
   const method = options.method ?? 'GET';
+  if (method !== 'GET' && typeof navigator !== 'undefined' && navigator.onLine === false)
+    throw new RequestError(0, 'OFFLINE', 'Reconnect before submitting. No changes were sent.');
   let response: Response;
   try {
     response = await fetch(`/api/v1${path}`, {

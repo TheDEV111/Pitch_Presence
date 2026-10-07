@@ -9,6 +9,7 @@ import { AuthPage, sessionHome, type AuthSession } from './auth';
 import { Button, Feedback, Loading, Logo } from './ui';
 import { PlayerHome, Attendance, PlayerDues, PaymentReturn, CheckIn } from './player';
 import { ManagementHome, Training, TrainingSession } from './training';
+import { InstalledLaunch, InstallApp } from './pwa';
 import { Players, ManagementDues, Audit, Account } from './management';
 const playerNav = [
   { href: '/home', name: 'Home', icon: Home },
@@ -63,7 +64,7 @@ export function Application({ route }: { route: string }) {
     }
   }
   useEffect(() => {
-    if (!publicAuth) void load();
+    if (!publicAuth && route !== 'launch') void load();
     else setLoading(false);
     const onExpire = () => {
       setExpired(true);
@@ -83,6 +84,7 @@ export function Application({ route }: { route: string }) {
     };
     // Each navigation mounts a fresh application; authentication is kept in memory only.
   }, []);
+  if (route === 'launch') return <InstalledLaunch />;
   if (publicAuth) return <AuthPage mode={route} />;
   if (route === 'check-in')
     return <CheckIn user={user} loading={loading} error={error} authenticated={authenticated} />;
@@ -211,6 +213,7 @@ export function Application({ route }: { route: string }) {
             {user.name}
           </Link>
         </header>
+        {['home', 'management', 'account'].includes(route) && <InstallApp />}
         <main id="main" className="app-main">
           {!online && (
             <div className="notice" role="status">

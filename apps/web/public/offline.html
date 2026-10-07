@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#195c3c" />
+    <meta name="robots" content="noindex" />
+    <title>Reconnect — PitchPresence</title>
+    <link rel="icon" href="/icon.svg" />
+    <link rel="stylesheet" href="/pwa/offline.css" />
+    <script src="/pwa/offline.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <img src="/icon.svg" width="64" height="64" alt="" />
+      <p class="brand">PitchPresence.</p>
+      <h1>Let’s reconnect.</h1>
+      <p>Reconnect to access your team. Attendance and payments require internet.</p>
+      <p>
+        No attendance or payment was submitted by this screen. Once connected, retry your task. For
+        attendance, scan the QR currently displayed by your coach.
+      </p>
+      <button id="retry" type="button">Retry connection</button>
+      <p id="status" role="status"></p>
+      <noscript>Once connected, reload this page to continue.</noscript>
+    </main>
+  </body>
+</html>

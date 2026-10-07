@@ -56,6 +56,7 @@ The test suite creates synthetic users and financial records; never point it at 
 
 - [UI/UX design specification](design.md)
 - [Frontend setup, routes and asset pipeline](apps/web/README.md)
+- [PWA installation and release media](docs/frontend/pwa-media.md)
 - [Architecture and domain rules](docs/backend/architecture.md)
 - [API integration guide](docs/backend/api.md)
 - [OpenAPI reference](docs/backend/openapi.json)

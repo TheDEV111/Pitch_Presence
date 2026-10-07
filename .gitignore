@@ -8,6 +8,9 @@ dist/
 .env.*
 !.env.example
 coverage/
+apps/web/public/sw.js
+.media-source/
+.media-work/
 *.log
 
 # Local credentials, agent state, and portable Git backups.

@@ -1,0 +1,72 @@
+name: Prepare release media
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_LOCAL_MEDIA: 'true'
+      NEXT_PUBLIC_LOCAL_FONTS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install 'fonttools[woff]==4.63.0'
+      - run: npm ci
+      - run: npm run media:icons
+      - name: Download and finish licensed photography and fonts
+        run: npm run media:sync
+      - run: npm run build -w @pitchpresence/shared
+      - run: npm run build -w @pitchpresence/web
+      - run: npx playwright install --with-deps chromium
+      - name: Render the twelve-second hero film
+        run: |
+          node node_modules/next/dist/bin/next start apps/web --hostname 127.0.0.1 > /tmp/pitchpresence-media-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:3000/ > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run media:video
+      - run: npm run media:verify
+      - name: Verify the final production build
+        env:
+          REQUIRE_LOCAL_MEDIA: 'true'
+        run: npm run build -w @pitchpresence/web
+      - name: Check browser artifacts for GitHub tokens
+        run: npm run security:check:browser
+      - name: Test PWA journeys and actual film playback
+        run: npm run test:web -- apps/web/e2e/pwa.spec.ts
+      - name: Upload browser traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-browser-failures
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Upload finished media for review and commit
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitchpresence-release-media
+          path: |
+            apps/web/public/media/
+            apps/web/public/fonts/
+            apps/web/public/icons/
+          retention-days: 14
+          if-no-files-found: error

@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Application } from '@/components/application';
 export const metadata = { title: 'Your team', robots: { index: false, follow: false } };
 const paths = new Set([
+  'launch',
   'sign-in',
   'signup',
   'player/sign-in',

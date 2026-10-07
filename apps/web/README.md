@@ -32,7 +32,7 @@ The backend enforces every role and mutation. HTTP-only session cookies remain i
 
 ## Media and fonts
 
-Photo sources, creators, licences, dimensions and focal points are recorded in [the asset register](public/media/manifest.json). This environment cannot download assets over the network. The preview therefore uses responsive Pexels CDN images and Google Fonts, with local media support and readable system font fallbacks. Photos illustrate football training and do not imply customer endorsement.
+Photo sources, creators, licences, dimensions and focal points are recorded in [the asset register](public/media/manifest.json). Development previews can use Pexels CDN images and Google Fonts. Production uses local media and system fallbacks; it never falls back to third-party image or font hosts. Photos illustrate football training and do not imply customer endorsement.
 
 On a machine with internet access:
 
@@ -41,7 +41,7 @@ npm run media:sync
 NEXT_PUBLIC_LOCAL_MEDIA=true NEXT_PUBLIC_LOCAL_FONTS=true npm run build
 ```
 
-The script downloads WebP derivatives at 320, 640, 960, 1440 and 1920px and self-hosted Antonio/Inter fonts with OFL licences. Review photo crops and byte sizes before deployment; target 250KB mobile / 500KB desktop for the hero. If the full font files need further size reduction, subset to the product's supported characters with a font tooling pipeline. No video asset is shipped. The landing story uses an accessible component animation with user-controlled playback, static chapters, reduced-motion support and an inert QR illustration. The optional training clip can be added once sourced.
+The script prepares local WebP derivatives at 320, 640, 960, 1440 and 1920px and subsetted Antonio/Inter WOFF2 fonts with OFL licences. Production uses local photography with a neutral fallback and omits external font stylesheets. The film renderer captures fictional demo panels and edits licensed footage into a 12-second hero film. Finished video binaries require the network-enabled media job; builds without them retain photography and the interactive walkthrough. See [PWA and media release instructions](../../docs/frontend/pwa-media.md) for tools, commands and the dedicated GitHub workflow.
 
 ## Verification and limitations
 
@@ -60,4 +60,4 @@ Collections offer explicit cursor pagination. Player search covers loaded record
 
 Live session QR codes refresh every 10 seconds; an expired code is hidden immediately. The roster refreshes every 5 seconds while visible and preserves prior data with an error notice on failed refreshes. Manual confirmations, account deactivations, invitation revocations and session closure use native accessible confirmation dialogs. Payment redirects never establish settlement; the return page reads and verifies server status.
 
-The manifest supplies install metadata. No service worker or offline mutation queue is included: authenticated responses are fetched with `no-store`. Full PWA install/offline shell support remains a later step requiring safe cache rules. Browser validation and real-provider verification must be completed in a networked environment before release.
+Production builds generate a service worker for the independent offline screen and approved static assets. Authenticated HTML, API responses, route data, query-bearing assets and videos are not cached. The manifest starts at `/launch`, which checks the online session and routes to the correct dashboard/onboarding step or offers both sign-in choices. Install guidance is available on role home/account screens. There is no offline write queue; reported-offline mutations are rejected without being sent. Updates wait until old app windows close. Automated cache checks are included; installed-app behaviour and real providers still require deployed device testing.

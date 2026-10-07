@@ -24,6 +24,15 @@ describe('naira amounts and team time', () => {
   });
 });
 describe('authenticated API client', () => {
+  it('blocks offline mutations without sending or queuing a request', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('navigator', { onLine: false });
+    await expect(
+      api('/attendance/check-in', { method: 'POST', body: { token: 'example' } }),
+    ).rejects.toMatchObject({ code: 'OFFLINE', status: 0 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it('uses no-store cookies, in-memory CSRF, and stable checkout idempotency', async () => {
     const fetch = vi
       .fn()

@@ -32,7 +32,13 @@
     "media:sync": "node scripts/sync-media.mjs",
     "test:web": "playwright test",
     "db:reset:development": "node --env-file=.env scripts/reset-development.mjs",
-    "db:clear:test": "node --env-file=.env scripts/clear-test-data.mjs"
+    "db:clear:test": "node --env-file=.env scripts/clear-test-data.mjs",
+    "security:check": "git ls-files -z | node scripts/check-github-tokens.mjs",
+    "security:check:browser": "git ls-files -z | node scripts/check-github-tokens.mjs --browser",
+    "security:clean:local": "node scripts/clean-local-github-tokens.mjs",
+    "media:icons": "node scripts/generate-icons.mjs",
+    "media:video": "node scripts/render-hero-video.mjs",
+    "media:verify": "node scripts/verify-media.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.15",
@@ -46,7 +52,8 @@
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.57.2",
-    "vitest": "3.2.7"
+    "vitest": "3.2.7",
+    "sharp": "0.35.5"
   },
   "type": "module"
 }

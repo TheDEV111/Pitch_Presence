@@ -22,5 +22,25 @@
       "alt": "A football coach explaining a training strategy beside the pitch.",
       "focalPoint": "50% 40%"
     }
+  ],
+  "videos": [
+    {
+      "name": "warmup",
+      "source": "https://www.pexels.com/video/man-warming-up-on-a-soccer-field-7187051/",
+      "creator": "RDNE Stock project",
+      "license": "https://www.pexels.com/license/",
+      "master": "warmup.mp4",
+      "trimStart": 0,
+      "trimDuration": 3
+    },
+    {
+      "name": "coaching",
+      "source": "https://www.pexels.com/video/a-man-coaching-a-football-team-8938113/",
+      "creator": "Kampus Production",
+      "license": "https://www.pexels.com/license/",
+      "master": "coaching.mp4",
+      "trimStart": 0,
+      "trimDuration": 3
+    }
   ]
 }

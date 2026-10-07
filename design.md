@@ -151,7 +151,7 @@ The landing page has a 1280px content maximum, with dark bands and photographs a
 
 ### Claims and conversion boundaries
 
-- V1 serves an existing single team. There is no public Create team, pricing checkout, subscription, or manager sign-up flow.
+- V1 supports separate teams. Coaches/managers sign up, verify email and create a team or accept a staff invitation. There is no pricing checkout, subscription or team switcher.
 - Signed-in visitors use **Open dashboard** in place of Sign in; route them to their role's home.
 - Players without an invitation see: “Joining your team? Ask your coach or manager for an invite link.”
 - Mark walkthroughs **Product demo**. Use fictional names and nonfunctional sample QR content.
@@ -426,7 +426,7 @@ Target WCAG 2.2 AA. Ordinary text requires at least 4.5:1 contrast; large text a
 
 ## 10. Frontend Handoff and Backend Alignment
 
-The next implementation phase builds these screens in `apps/web`, using the existing browser-safe contracts and same-origin API. This document adds no backend behaviour by itself.
+The screens are implemented in `apps/web`, using browser-safe contracts and the same-origin API. Installation, safe offline navigation, local media delivery and the 12-second hero film follow the [PWA and media release instructions](docs/frontend/pwa-media.md). The interactive walkthrough remains the full product explanation; actual film exports require the media pipeline and visual review.
 
 | Capability                               | Existing contract / handoff requirement                                                                                                                                                                                                 |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
