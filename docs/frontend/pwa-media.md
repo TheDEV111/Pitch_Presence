@@ -46,7 +46,8 @@ npm run media:video
 npm run media:verify
 ```
 
-If Pexels blocks automated master downloads, download the licensed files from the
+Video masters download directly from the official MP4 CDN URLs in the asset register,
+without scraping Pexels HTML pages. If a CDN download fails, download the licensed files from the
 source pages recorded in `apps/web/public/media/manifest.json` into
 `.media-source/warmup.mp4` and `.media-source/coaching.mp4`, then retry. Photography
 masters can similarly be supplied as `training.jpg` and `coach.jpg`. Sources must

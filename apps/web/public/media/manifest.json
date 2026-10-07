@@ -31,7 +31,8 @@
       "license": "https://www.pexels.com/license/",
       "master": "warmup.mp4",
       "trimStart": 0,
-      "trimDuration": 3
+      "trimDuration": 3,
+      "download": "https://videos.pexels.com/video-files/7187051/7187051-hd_1920_1080_24fps.mp4"
     },
     {
       "name": "coaching",
@@ -40,7 +41,8 @@
       "license": "https://www.pexels.com/license/",
       "master": "coaching.mp4",
       "trimStart": 0,
-      "trimDuration": 3
+      "trimDuration": 3,
+      "download": "https://videos.pexels.com/video-files/8938113/8938113-uhd_3840_2160_25fps.mp4"
     }
   ]
 }

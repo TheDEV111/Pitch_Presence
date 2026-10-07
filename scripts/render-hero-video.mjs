@@ -2,64 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { chromium } from '@playwright/test';
-import {
-  sourceFolder,
-  publicFolder,
-  workFolder,
-  digest,
-  download,
-  probe,
-  run,
-} from './media-tools.mjs';
-
-async function videoMaster(asset) {
-  const path = join(sourceFolder, asset.master);
-  try {
-    await readFile(path);
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    let html;
-    try {
-      const response = await fetch(asset.source, { signal: AbortSignal.timeout(30000) });
-      if (!response.ok) throw new Error();
-      html = (await response.text())
-        .replaceAll('\\u002F', '/')
-        .replaceAll('\\/', '/')
-        .replaceAll('&amp;', '&');
-    } catch {
-      throw new Error(
-        `Download the licensed ${asset.name} video to .media-source/${asset.master}; automated source access is unavailable.`,
-      );
-    }
-    const candidates = [
-      ...new Set(
-        html.match(/https:\/\/videos\.pexels\.com\/[^"\s<>\\]+\.mp4(?:\?[^"\s<>\\]*)?/g) ?? [],
-      ),
-    ];
-    const url = candidates.find((candidate) => /1920[_x]1080/.test(candidate)) ?? candidates[0];
-    if (!url)
-      throw new Error(
-        `Download the licensed ${asset.name} master to .media-source/${asset.master}.`,
-      );
-    await download(url, path);
-  }
-  const metadata = await probe(path);
-  const stream = metadata.streams.find((stream) => stream.codec_type === 'video');
-  if (
-    !stream ||
-    stream.width < 1280 ||
-    Number(metadata.format.duration) < asset.trimStart + asset.trimDuration
-  )
-    throw new Error(`Invalid or undersized video master: ${asset.name}.`);
-  const bytes = await readFile(path);
-  if (asset.masterSha256 && digest(bytes) !== asset.masterSha256)
-    throw new Error(`Video master changed: ${asset.name}. Review the asset register.`);
-  asset.masterSha256 = digest(bytes);
-  asset.width = stream.width;
-  asset.height = stream.height;
-  asset.duration = Number(metadata.format.duration);
-  return path;
-}
+import { loadVideoMaster } from './video-master.mjs';
+import { sourceFolder, publicFolder, workFolder, digest, probe, run } from './media-tools.mjs';
 
 async function screenshots() {
   const base = process.env.MEDIA_PREVIEW_URL ?? 'http://127.0.0.1:3000';
@@ -106,7 +50,7 @@ async function main() {
   const folder = join(publicFolder, 'media');
   const register = JSON.parse(await readFile(join(folder, 'manifest.json'), 'utf8'));
   const masters = [];
-  for (const asset of register.videos) masters.push(await videoMaster(asset));
+  for (const asset of register.videos) masters.push(await loadVideoMaster(asset));
   await screenshots();
   const captions = [
     'MORE FOOTBALL.',
