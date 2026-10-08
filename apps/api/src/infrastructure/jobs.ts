@@ -6,6 +6,8 @@ import type { Config } from '../config/index.js';
 import type { Providers } from './providers.js';
 import { decrypt } from './secrets.js';
 import type { PaymentService } from '../modules/payments/service.js';
+import { createPushSender, type PushSender } from './push.js';
+import { pushSubscriptionInput } from '../modules/notifications/schema.js';
 const emailPayload = z.object({
   userId: z.string().uuid(),
   challengeId: z.string().uuid(),
@@ -21,6 +23,7 @@ export class JobRunner {
     private providers: Providers,
     private payments: PaymentService,
     private onEvent: (event: Record<string, unknown>) => void = () => {},
+    private sendPush: PushSender = createPushSender(config),
   ) {}
   async tick() {
     const token = randomUUID();
@@ -55,6 +58,56 @@ export class JobRunner {
             p.purpose,
             job.deduplicationKey,
           );
+      } else if (job.kind === 'EMAIL_BANK_CODE' || job.kind === 'EMAIL_BANK_CHANGED') {
+        const p = z
+          .object({
+            changeId: z.string().uuid(),
+            encryptedOtp: z.string().optional(),
+            recipientId: z.string().uuid().optional(),
+          })
+          .parse(job.payload);
+        const change = await this.db.bankAccountChange.findFirst({
+          where: { id: p.changeId, teamId: job.teamId! },
+        });
+        requireRule(
+          change && job.teamId,
+          409,
+          'JOB_TEAM_MISMATCH',
+          'Bank email job team mismatch.',
+        );
+        const code = job.kind === 'EMAIL_BANK_CODE';
+        const recipient = await this.db.user.findFirst({
+          where: {
+            id: code ? change.requestedBy : (p.recipientId ?? ''),
+            teamId: job.teamId,
+            role: 'MANAGER',
+            active: true,
+            isVerified: true,
+          },
+        });
+        const team = await this.db.team.findUniqueOrThrow({ where: { id: job.teamId } });
+        if (
+          recipient &&
+          (code
+            ? !change.consumedAt && change.expiresAt > new Date() && change.attempts < 5
+            : !!change.appliedAt)
+        ) {
+          const details =
+            change.action === 'REMOVE'
+              ? 'remove the current bank account'
+              : `set ${change.bankName}, ${change.accountName}, account ending ${change.accountLast4}`;
+          const text = code
+            ? `You requested to ${details} for ${team.name}. Your confirmation code is ${decrypt(this.config.SESSION_SECRET, p.encryptedOtp!)}. It expires in 10 minutes and applies only to this change. If you did not request it, do not share this code.`
+            : `A staff member confirmed a bank change for ${team.name}: ${details}. Review team settings at ${this.config.APP_URL}/management/team. Contact your team immediately if this change was unexpected.`;
+          await this.providers.sendBankNotice(
+            recipient.email,
+            code
+              ? 'Confirm your PitchPresence bank account change'
+              : 'PitchPresence team bank account changed',
+            text,
+            job.deduplicationKey,
+          );
+        }
       } else if (job.kind === 'EMAIL_STAFF_INVITATION') {
         const payload = z
           .object({ invitationId: z.string().uuid(), encryptedToken: z.string() })
@@ -75,6 +128,47 @@ export class JobRunner {
             `${this.config.APP_URL}/staff/join?invite=${token}`,
             job.deduplicationKey,
           );
+        }
+      } else if (job.kind === 'PUSH_RECEIPT_SUBMITTED') {
+        requireRule(job.teamId, 409, 'JOB_TEAM_MISMATCH', 'Receipt notification team missing.');
+        const p = z
+          .object({ receiptId: z.string().uuid(), subscriptionId: z.string().uuid() })
+          .parse(job.payload);
+        const subscription = await this.db.pushSubscription.findFirst({
+          where: {
+            id: p.subscriptionId,
+            teamId: job.teamId!,
+            vapidPublicKey: this.config.VAPID_PUBLIC_KEY,
+            user: { active: true, isVerified: true, role: 'MANAGER' },
+            session: { revokedAt: null, expiresAt: { gt: new Date() } },
+          },
+        });
+        const receipt = await this.db.paymentReceipt.findFirst({
+          where: { id: p.receiptId, teamId: job.teamId!, status: 'PENDING' },
+          select: { id: true, monthlyDuesId: true },
+        });
+        if (
+          job.teamId &&
+          subscription &&
+          receipt &&
+          this.config.VAPID_PUBLIC_KEY &&
+          Date.now() - job.createdAt.getTime() < 86400_000
+        ) {
+          const details = pushSubscriptionInput.parse(
+            JSON.parse(
+              decrypt(this.config.DATA_ENCRYPTION_SECRET, subscription.encryptedSubscription),
+            ),
+          );
+          const dues = await this.db.monthlyDues.findFirstOrThrow({
+            where: { id: receipt.monthlyDuesId, teamId: job.teamId },
+            select: { month: true },
+          });
+          const outcome = await this.sendPush(details, {
+            receiptId: receipt.id,
+            url: `/management/dues?month=${dues.month}`,
+          });
+          if (outcome === 'gone')
+            await this.db.pushSubscription.deleteMany({ where: { id: subscription.id } });
         }
       } else if (job.kind === 'VERIFY_PAYMENT') {
         const p = paymentPayload.parse(job.payload);
@@ -128,6 +222,26 @@ export class JobRunner {
     return true;
   }
   async maintain() {
+    await this.db.pushSubscription.deleteMany({
+      where: {
+        OR: [
+          { session: { revokedAt: { not: null } } },
+          { session: { expiresAt: { lte: new Date() } } },
+          { user: { active: false } },
+          { user: { isVerified: false } },
+          { user: { role: { not: 'MANAGER' } } },
+        ],
+      },
+    });
+    // Keep the payment audit, but remove reviewed receipt bytes after 180 days.
+    await this.db.paymentReceipt.updateMany({
+      where: {
+        status: { not: 'PENDING' },
+        reviewedAt: { lt: new Date(Date.now() - 180 * 86400_000) },
+        content: { not: null },
+      },
+      data: { content: null },
+    });
     await this.db.rateLimitBucket.deleteMany({ where: { expiresAt: { lt: new Date() } } });
     const unresolved = await this.db.payment.findMany({
       where: {

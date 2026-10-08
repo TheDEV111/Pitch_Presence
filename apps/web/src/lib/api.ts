@@ -48,6 +48,8 @@ export async function api<T>(
       failure?.error?.message ?? 'The service is unavailable. Please try again.',
       failure?.error?.requestId,
     );
+    if (error.code === 'PLAYER_REMOVED' && path !== '/auth/device-login')
+      window.dispatchEvent(new CustomEvent('player-removed', { detail: error.message }));
     if (
       response.status === 401 &&
       error.code !== 'REAUTHENTICATION_FAILED' &&

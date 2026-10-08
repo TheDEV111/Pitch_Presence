@@ -3,12 +3,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 WORKDIR /app
 COPY package*.json ./
 COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY prisma prisma
 RUN npm ci
 COPY . .
-RUN npm run db:generate && npm run build
+RUN npm run db:generate && npm run build:backend
 ENV NODE_ENV=production
 USER node
 EXPOSE 4000

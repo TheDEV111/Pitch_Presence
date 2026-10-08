@@ -1,4 +1,5 @@
-import argon2 from 'argon2';
+import { TransferService } from './transfer.js';
+import { verifyStaffPassword } from './reauth.js';
 import type { PrismaClient, User } from '@pitchpresence/database';
 import type { z } from 'zod';
 import type { schemas } from '@pitchpresence/shared';
@@ -16,15 +17,20 @@ import {
   requireRule,
 } from '../../plugins/core.js';
 export class TeamService {
+  readonly transfers: TransferService;
   constructor(
     private db: PrismaClient,
     private config: Config,
     private providers: Providers,
-  ) {}
+  ) {
+    this.transfers = new TransferService(db, config);
+  }
   banks() {
+    this.requirePaystack();
     return this.providers.banks();
   }
   resolve(bankCode: string, accountNumber: string) {
+    this.requirePaystack();
     return this.providers.resolveBank(bankCode, accountNumber);
   }
   async create(user: User, name: string, requestId: string) {
@@ -120,7 +126,11 @@ export class TeamService {
       team: { id: team.id, name: team.name, createdAt: team.createdAt },
       paymentProfile: present(active),
       latestSetup: present(profiles[0] ?? null),
-      paymentsReady: !!active && active.status === 'READY',
+      paymentMode: this.config.PAYMENT_MODE,
+      transferAccount: await this.transfers.current(teamId),
+      pendingBankChange: await this.transfers.pending(teamId),
+      paymentsReady:
+        this.config.PAYMENT_MODE === 'PAYSTACK' && !!active && active.status === 'READY',
     };
   }
   async overview(teamId: string) {
@@ -142,7 +152,7 @@ export class TeamService {
           take: 5,
         }),
         this.db.user.count({ where: eligible }),
-        this.db.user.count({ where: { teamId, role: 'PLAYER' } }),
+        this.db.user.count({ where: { teamId, role: 'PLAYER', removedAt: null } }),
         this.db.duesPeriod.findUnique({ where: { teamId_month: { teamId, month } } }),
         this.db.monthlyDues.count({ where: { teamId, month, status: 'PAID', player: eligible } }),
       ]);
@@ -160,24 +170,26 @@ export class TeamService {
       setup: {
         hasPlayers: activePlayers > 0,
         duesConfigured: !!period,
-        paymentsReady: settings.paymentsReady,
+        paymentsReady:
+          this.config.PAYMENT_MODE === 'MANUAL'
+            ? !!settings.transferAccount
+            : settings.paymentsReady,
       },
     };
   }
   async password(user: User, password: string) {
-    await rateLimit(this.db, `bank-reauth:${user.id}`, 5, 900);
-    const current = await this.db.user.findUniqueOrThrow({ where: { id: user.id } });
+    return verifyStaffPassword(this.db, user, password);
+  }
+  requirePaystack() {
     requireRule(
-      current.active &&
-        current.isVerified &&
-        current.passwordHash &&
-        (await argon2.verify(current.passwordHash, password)),
-      401,
-      'REAUTHENTICATION_FAILED',
-      'Check your password and try again.',
+      this.config.PAYMENT_MODE === 'PAYSTACK',
+      409,
+      'PAYSTACK_PAUSED',
+      'Online payments are paused. Use team bank transfers and receipts.',
     );
   }
   async setup(user: User, input: z.infer<typeof schemas.bankSetup>, requestId: string) {
+    this.requirePaystack();
     const teamId = await actorTeam(this.db, user.id);
     await this.password(user, input.password);
     const banks = await this.providers.banks();
@@ -266,6 +278,7 @@ export class TeamService {
     });
   }
   async reconcile(user: User, requestId: string) {
+    this.requirePaystack();
     const teamId = await actorTeam(this.db, user.id);
     await rateLimit(this.db, `bank-review:${teamId}`, 5, 300);
     const profile = await this.db.teamPaymentProfile.findFirst({

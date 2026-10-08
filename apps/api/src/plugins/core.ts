@@ -59,7 +59,14 @@ export function monthRange(start: string, end = localMonth()) {
 export type Tx = Prisma.TransactionClient;
 export async function lock(
   tx: Tx,
-  table: 'User' | 'TrainingSession' | 'MonthlyDues' | 'DuesPeriod' | 'Payment',
+  table:
+    | 'User'
+    | 'TrainingSession'
+    | 'MonthlyDues'
+    | 'DuesPeriod'
+    | 'Payment'
+    | 'Team'
+    | 'BankAccountChange',
   id: string,
 ) {
   // Table names are a closed union; identifiers never come from HTTP input.
@@ -118,6 +125,12 @@ export const cursorPage = (cursor: string | undefined, limit: number) => ({
 
 export async function actorTeam(db: PrismaClient | Tx, userId: string) {
   const user = await db.user.findUnique({ where: { id: userId } });
+  requireRule(
+    !user?.removedAt,
+    403,
+    'PLAYER_REMOVED',
+    'You have been removed from your team. Contact your coach or manager for help.',
+  );
   requireRule(
     user?.teamId && user.active && user.isVerified,
     403,

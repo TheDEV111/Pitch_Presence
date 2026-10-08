@@ -1,5 +1,8 @@
 import type {
   AttendanceResponse,
+  ReceiptResponse,
+  ReceiptAccountResponse,
+  TransferAccountResponse,
   DuesResponse,
   PaymentResponse,
   TrainingResponse,
@@ -8,8 +11,13 @@ export type PaymentRecord = Pick<PaymentResponse, 'id' | 'status' | 'amount' | '
   provider: 'PAYSTACK' | 'EXTERNAL';
   reversedAt: string | null;
   needsReview?: boolean;
+  receipt?: ReceiptResponse | null;
 };
 export type DuesRecord = DuesResponse & {
+  paymentMode?: 'MANUAL' | 'PAYSTACK';
+  transferAccount?: TransferAccountResponse | null;
+  proofAvailable?: boolean;
+  receiptAccounts?: ReceiptAccountResponse[];
   minimumAmount?: number | null;
   paymentAvailable?: boolean;
   paymentsReady?: boolean;

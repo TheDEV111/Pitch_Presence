@@ -133,7 +133,7 @@ async function signup(page: Page, invited = false) {
   await page.getByLabel('Your name').fill('Coach');
   if (invited) await expect(page.getByLabel('Email address')).toHaveValue(coach.email);
   else await page.getByLabel('Email address').fill(coach.email);
-  await page.getByLabel('Choose a password').fill('a memorable coach passphrase');
+  await page.getByLabel('Choose a password').fill('CoachPass123!');
   await page.getByRole('button', { name: 'Create staff account' }).click();
 }
 test.beforeEach(async ({ page }) => {
@@ -155,7 +155,7 @@ test('verification resumes after refresh and navigation without saving the code 
     sessionStorage.getItem('pitchpresence:verification:MANAGER'),
   );
   expect(stored).not.toContain('012345');
-  expect(stored).not.toContain('passphrase');
+  expect(stored).not.toContain('CoachPass123!');
   expect(stored).not.toContain('invite');
   await page.goto('/sign-in');
   await page.getByRole('button', { name: 'Continue email verification' }).click();
@@ -168,7 +168,7 @@ test('an unverified coach signing in resumes verification and then team creation
   await mockOnboarding(page);
   await page.goto('/sign-in');
   await page.getByLabel('Email address').fill(coach.email);
-  await page.getByLabel('Password', { exact: true }).fill('a memorable coach passphrase');
+  await page.getByLabel('Password', { exact: true }).fill('CoachPass123!');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByLabel('Six-digit email code')).toBeVisible();
   await expect(page.getByLabel('Email address')).toHaveValue(coach.email);

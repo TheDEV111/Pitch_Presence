@@ -1553,9 +1553,18 @@ dialog::backdrop {
 }
 .filter-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: 16px;
   margin-bottom: 24px;
+}
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.app-topbar {
+  flex-wrap: wrap;
 }
 .management-dues-row {
   border-bottom: 1px solid var(--border);
@@ -2412,4 +2421,62 @@ pre {
   display: block;
   width: 100%;
   height: 100%;
+}
+.split-film {
+  height: 100%;
+}
+.split-film .film-visual {
+  height: 100%;
+  aspect-ratio: auto;
+}
+.split-film-mobile {
+  display: none;
+}
+.auth-side > .split-film {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+}
+.auth-side .split-film .photo {
+  border-radius: 0;
+}
+.auth-side .split-film picture,
+.auth-side .split-film video,
+.auth-side .split-film .film-visual > .photo {
+  opacity: 0.48;
+}
+.auth-side .split-film .film-controls {
+  top: 32px;
+  bottom: auto;
+  right: 32px;
+}
+.management-photo {
+  position: relative;
+}
+.management-photo > .split-film {
+  position: absolute;
+  inset: 0;
+}
+@media (max-width: 767px) {
+  .split-film .film-visual {
+    display: none;
+  }
+  .split-film-mobile {
+    display: block;
+    height: 100%;
+  }
+}
+
+.receipt-payment-line {
+  flex-wrap: wrap;
+}
+.receipt-review {
+  flex-basis: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.account-number {
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  letter-spacing: 0.06em;
 }

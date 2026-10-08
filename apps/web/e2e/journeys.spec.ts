@@ -85,6 +85,7 @@ test('pending checkout is not shown as a paid month', async ({ page }) => {
               month,
               status: 'NOT_PAID',
               minimumAmount: 500000,
+              paymentMode: 'PAYSTACK',
               paymentAvailable: true,
               payments: [],
             },
@@ -242,7 +243,7 @@ test('staff signup verifies email then resumes team creation', async ({ page }) 
           : { error: { code: 'AUTH_REQUIRED', message: 'Sign in.' } },
       });
     if (path.endsWith('/auth/staff-register')) {
-      expect(r.request().postDataJSON().password).toBe('a memorable coach passphrase');
+      expect(r.request().postDataJSON().password).toBe('CoachPass123!');
       return r.fulfill({ json: { message: 'Check email.' } });
     }
     if (path.endsWith('/auth/verify-email')) {
@@ -276,7 +277,7 @@ test('staff signup verifies email then resumes team creation', async ({ page }) 
   await page.goto('/signup');
   await page.getByLabel('Your name').fill('Tobi Adeyemi');
   await page.getByLabel('Email address').fill(player.email);
-  await page.getByLabel('Choose a password').fill('a memorable coach passphrase');
+  await page.getByLabel('Choose a password').fill('CoachPass123!');
   await page.getByRole('button', { name: 'Create staff account' }).click();
   await page.getByLabel('Six-digit email code').fill('012345');
   await page.getByRole('button', { name: 'Verify email', exact: true }).click();
@@ -396,7 +397,7 @@ test('staff resolve and confirm a bank, reauthenticate, and stay signed in after
             },
           },
         });
-      expect(body.password).toBe('a memorable coach passphrase');
+      expect(body.password).toBe('CoachPass123!');
       connected = true;
       return route.fulfill({ json: settings() });
     }
@@ -425,7 +426,7 @@ test('staff resolve and confirm a bank, reauthenticate, and stay signed in after
     'Check your password',
   );
   await expect(page.getByLabel('Confirm your password')).toBeVisible();
-  await page.getByLabel('Confirm your password').fill('a memorable coach passphrase');
+  await page.getByLabel('Confirm your password').fill('CoachPass123!');
   await page.getByRole('button', { name: 'Connect team bank account', exact: true }).click();
   await expect(page.getByText('Account ending 6789 · Connected')).toBeVisible();
   expect(connected).toBe(true);

@@ -22,6 +22,7 @@ export const publicUser = (u: User) => ({
   role: u.role,
   isVerified: u.isVerified,
   active: u.active,
+  removedAt: u.removedAt,
   activatedAt: u.activatedAt,
   teamId: u.teamId,
 });
@@ -273,6 +274,7 @@ export class AuthService {
     const user = await this.db.user.findUnique({ where: { email } });
     if (
       !user ||
+      user.removedAt ||
       (purpose === 'VERIFY_EMAIL' && user.isVerified) ||
       (purpose === 'PIN_RESET' && user.role !== 'PLAYER') ||
       (purpose === 'PASSWORD_RESET' && user.role !== 'MANAGER')
@@ -281,7 +283,7 @@ export class AuthService {
     await this.db.$transaction(async (tx) => {
       await lock(tx, 'User', user.id);
       const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
-      if (purpose !== 'VERIFY_EMAIL' || !current.isVerified)
+      if (!current.removedAt && (purpose !== 'VERIFY_EMAIL' || !current.isVerified))
         await this.queueOtp(tx, current, purpose);
     });
     return { message: 'If eligible, a code will be sent.' };
@@ -314,6 +316,7 @@ export class AuthService {
       });
       if (!valid) return null;
       const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
+      if (current.removedAt) return null;
       if (changing && current.isVerified && !current.active) return null;
       if (credentialHash)
         await tx.deviceSession.updateMany({
@@ -355,6 +358,12 @@ export class AuthService {
     const hash =
       (role === 'MANAGER' ? user?.passwordHash : user?.pinHash) ?? (await this.dummyHash);
     const valid = await argon2.verify(hash, pin);
+    if (user && user.role === role && valid && user.removedAt)
+      throw new AppError(
+        403,
+        'PLAYER_REMOVED',
+        'You have been removed from your team. Contact your coach or manager for help.',
+      );
     if (user && user.role === role && valid && !user.isVerified)
       throw new AppError(
         403,
@@ -378,7 +387,13 @@ export class AuthService {
       await lock(tx, 'User', user.id);
       const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
       requireRule(
-        current.active && current.isVerified,
+        !current.removedAt,
+        403,
+        'PLAYER_REMOVED',
+        'You have been removed from your team. Contact your coach or manager for help.',
+      );
+      requireRule(
+        current.active && current.isVerified && !current.removedAt,
         403,
         'ACCOUNT_UNAVAILABLE',
         'The account is unavailable.',
@@ -397,17 +412,24 @@ export class AuthService {
       ...(await this.context(user)),
     };
   }
-  async resolve(token: string | undefined) {
+  async resolve(token: string | undefined, reportRemoval = false) {
     if (!token) return null;
     const session = await this.db.deviceSession.findUnique({
       where: { tokenHash: digest(token) },
       include: { user: true },
     });
+    if (reportRemoval && session?.user.removedAt && session.expiresAt > new Date())
+      throw new AppError(
+        403,
+        'PLAYER_REMOVED',
+        'You have been removed from your team. Contact your coach or manager for help.',
+      );
     if (
       !session ||
       session.revokedAt ||
       session.expiresAt <= new Date() ||
       !session.user.active ||
+      session.user.removedAt ||
       !session.user.isVerified
     )
       return null;

@@ -243,7 +243,7 @@ Use page-level scrolling. Sticky summaries are allowed only when their full cont
 ### Shared page shells
 
 - **Editorial shell:** landing header, large statement, story sections, and footer.
-- **Authentication shell:** photography/short caption alongside one focused form; mobile replaces the photo with a compact brand header.
+- **Authentication shell:** training film/short caption alongside one focused form; mobile replaces the photo with a compact brand header.
 - **Player shell:** concise heading, current task/summary, and history/details. No decorative photo beside transaction records.
 - **Management shell:** contextual summary alongside an actionable list, table, or selected detail panel.
 - **Focused status shell:** centred check-in or payment outcome, with session/month context and one primary next action.
@@ -276,7 +276,7 @@ No action label should require inference: use **Mark present**, **Confirm extern
 
 Completed onboarding steps are recovered from the server. Before verification, keep only the pending email, role and resend deadline in per-tab session storage for at most 24 hours; never store credentials, OTPs or invitation tokens. Refresh resumes the verification screen without resetting its cooldown. Correct sign-in credentials for an unverified account lead to verification. Verified sessions resume team creation, saved invitation acceptance or the dashboard. Show **Continue email verification** on signup/sign-in and **Retry connection** when the initial session check fails. Signup retries preserve the original account and invitation; account creation and the verification email job are committed together.
 
-Desktop/tablet uses a calm field or team-huddle photograph beside a form capped at 420px. The photograph and short caption remain consistent across steps to reduce visual disruption. Mobile presents the form immediately below the wordmark.
+Desktop/tablet uses the clean training film in the left panel beside a form capped at 420px. Keep the existing panel copy readable over a subdued video, with a visible pause/resume control. Use the portrait export to fill the panel; reduced motion or playback failure retains a poster or photograph. The same media remains consistent across authentication, registration, recovery, team creation and staff invitation steps. Mobile presents the form immediately below the wordmark and does not request the split-panel video.
 
 | Screen              | Content and actions                                                                                                       | Required states                                                                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -305,7 +305,7 @@ Coaches and managers have the same full MANAGER permissions. Each account has on
 
 Overview receives complete server totals, the current session, five recent sessions and setup flags. Optional tasks **Invite players**, **Set monthly dues**, **Connect team bank** stay resumable and never gate opening training. Opening with no active players warns that the saved roster will be empty and newly activated players join the next session. The team name remains visible in the application header.
 
-Team bank setup selects a bank, resolves a ten-digit account number, shows the account name, asks explicit authorisation confirmation and reauthenticates the password. Display masked saved details only. Explain zero platform commission, provider fees borne by the team, and that resolution does not prove ownership. A READY provider-active destination enables checkout. A pending/review response offers **Check connection status** and support guidance; it never encourages duplicate creation. A bank replacement creates a new immutable profile for new checkouts, while existing checkouts keep the previous destination. Never ask staff for a Paystack secret key.
+Manual transfers are the current payment flow. Team bank settings collect bank name, account holder name and the ten-digit account number, ask explicit authorisation confirmation, reauthenticate the staff password, then send an email confirmation code before activating any addition, replacement or removal. Show the unchanged active details and pending proposal separately; recover the pending step after refresh. Codes expire after ten minutes and only the requesting staff account can confirm them. All active staff receive a notification after a confirmed change. Players see full transfer details through authenticated dues screens. Ownership is checked by the team; do not imply automatic bank verification. Keep immutable account versions for prior transfer proofs. Paystack setup and checkout are paused; do not request provider keys from staff.
 
 ### 7.2 Player home and attendance
 
@@ -352,7 +352,9 @@ Use a selected-month summary/payment panel beside monthly history on wider scree
 - For a pending transaction, show **Payment processing** separately while the month remains **Not paid**. Prevent a second checkout from being started to work around an unknown result.
 - External payment guidance reads: “Paid outside the app? Your manager can confirm it here.” Do not display invented bank details or a player-controlled Mark paid action.
 
-Checkout's action is **Continue to Paystack**. Establish one idempotency key per payment attempt and retain the key and nonsecret payment context through redirects/retries. Show the intended player/month/amount before leaving the page.
+In manual mode, show the current team account, transferred amount, optional reference and a PDF/PNG receipt input (2 MB maximum). **Submit payment proof** shows **Proof submitted · awaiting staff confirmation**, while the ledger remains unpaid. Coaches/managers download privately, check the bank statement and either **Approve receipt and mark paid** or reject with a reason. Staff can still confirm external payments directly when no proof is pending. Show rejection reasons, limit repeat uploads, and keep private proof out of public caches. New staff passwords require at least eight characters with uppercase, lowercase, a number and a symbol.
+
+When online payments are enabled again, checkout's action is **Continue to Paystack**. Establish one idempotency key per payment attempt and retain the key and nonsecret payment context through redirects/retries. Show the intended player/month/amount before leaving the page.
 
 At `/dues/payment-return`, show **“Confirming your payment…”** while the backend verifies. Refresh the affected month's data after verified success. A pending result uses **Check status** and explanatory copy; a failure uses a fresh attempt only after the previous transaction has a confirmed terminal state. A provider mismatch says the payment needs review and directs the player to management. Never derive a Paid badge from checkout query parameters.
 

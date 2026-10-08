@@ -7,6 +7,7 @@ const config = loadConfig({
   DATABASE_URL: 'postgresql://localhost/test',
   SESSION_SECRET: 'provider-session-secret-000000000000000',
   QR_SIGNING_SECRET: 'provider-qr-secret-00000000000000000000',
+  PAYMENT_MODE: 'PAYSTACK',
   PAYSTACK_SECRET_KEY: 'sk_test_placeholder',
   RESEND_API_KEY: 're_test_placeholder',
   LOG_LEVEL: 'silent',
@@ -91,7 +92,7 @@ it('rejects malformed bank data and requires a server-side Paystack key', async 
   });
   fetch.mockClear();
   await expect(
-    createProviders({ ...config, PAYSTACK_SECRET_KEY: '' }).banks(),
+    createProviders({ ...config, PAYMENT_MODE: 'PAYSTACK', PAYSTACK_SECRET_KEY: '' }).banks(),
   ).rejects.toMatchObject({
     code: 'PAYMENTS_UNAVAILABLE',
   });

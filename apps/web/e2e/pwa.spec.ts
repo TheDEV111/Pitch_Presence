@@ -161,7 +161,7 @@ test('hero film autoplays silently, restarts on scroll and retains manual pause'
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
   await page.goto('/');
-  const visual = page.locator('.film-visual');
+  const visual = page.locator('.hero-media .film-visual');
   const video = page.getByLabel('PitchPresence training-day film');
   await visual.scrollIntoViewIfNeeded();
   await expect
@@ -177,7 +177,9 @@ test('hero film autoplays silently, restarts on scroll and retains manual pause'
   await expect(video).toHaveAttribute('src', mobile ? film.mobile : film.desktop);
   await expect(page.getByRole('button', { name: 'Play film', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Replay film', exact: true })).toHaveCount(0);
-  const control = page.getByRole('button', { name: 'Pause film', exact: true });
+  const control = page
+    .locator('.hero-media')
+    .getByRole('button', { name: 'Pause film', exact: true });
   await expect(control).toBeVisible();
   const controls = await control.boundingBox();
   const description = await page.locator('.film-description').boundingBox();
@@ -204,7 +206,10 @@ test('hero film autoplays silently, restarts on scroll and retains manual pause'
       ),
   );
   await expect(video).toHaveJSProperty('paused', true);
-  await page.getByRole('button', { name: 'Resume film', exact: true }).click();
+  await page
+    .locator('.hero-media')
+    .getByRole('button', { name: 'Resume film', exact: true })
+    .click();
   await expect(video).toHaveJSProperty('paused', false);
 });
 
@@ -217,7 +222,7 @@ test('reduced motion keeps the hero poster without requesting the video', async 
     if (/hero-(desktop|mobile)\.mp4/.test(request.url())) requests.push(request.url());
   });
   await page.goto('/');
-  await page.locator('.film-visual').scrollIntoViewIfNeeded();
+  await page.locator('.hero-media .film-visual').scrollIntoViewIfNeeded();
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>
@@ -247,10 +252,118 @@ test('blocked autoplay retains the poster and allows an explicit resume', async 
     };
   });
   await page.goto('/');
-  await page.locator('.film-visual').scrollIntoViewIfNeeded();
-  const resume = page.getByRole('button', { name: 'Resume film', exact: true });
+  await page.locator('.hero-media .film-visual').scrollIntoViewIfNeeded();
+  const resume = page
+    .locator('.hero-media')
+    .getByRole('button', { name: 'Resume film', exact: true });
   await expect(resume).toBeVisible();
   await expect(page.getByText('The film could not play.')).not.toBeVisible();
   await resume.click();
   await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toBeVisible();
+});
+
+test('desktop and tablet split screens play the training film with usable pause controls', async ({
+  page,
+}) => {
+  test.skip(!film.ready, 'Actual video exports are required.');
+  test.setTimeout(60000);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  let session: object | null = null;
+  await page.route('**/api/v1/**', (route) =>
+    route.fulfill({
+      status: session ? 200 : 401,
+      json: session ?? signedOut,
+    }),
+  );
+  for (const width of [1440, 834]) {
+    session = null;
+    await page.setViewportSize({ width, height: 1000 });
+    for (const path of [
+      '/sign-in',
+      '/player/sign-in',
+      '/signup',
+      '/forgot-password',
+      '/reset-pin',
+    ]) {
+      await page.goto(path);
+      const panel = page.locator('.auth-side');
+      const video = panel.getByLabel('Football training film');
+      await expect(panel).toBeVisible();
+      await expect(video).toHaveJSProperty('paused', false);
+      await expect(video).toHaveJSProperty('muted', true);
+      await expect(video).toHaveAttribute('src', film.mobile);
+      await panel.getByRole('button', { name: 'Pause film', exact: true }).click();
+      await expect(video).toHaveJSProperty('paused', true);
+      await panel.getByRole('button', { name: 'Resume film', exact: true }).click();
+      await expect(video).toHaveJSProperty('paused', false);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+    for (const [nextStep, path] of [
+      ['CREATE_TEAM', '/onboarding/team'],
+      ['ACCEPT_INVITATION', '/onboarding/staff-invitation'],
+    ]) {
+      session = {
+        ...auth,
+        user: { ...user, role: 'MANAGER', teamId: null },
+        team: null,
+        nextStep,
+        pendingInvitation:
+          nextStep === 'ACCEPT_INVITATION'
+            ? {
+                teamName: team.name,
+                email: user.email,
+                available: true,
+                expiresAt: '2099-01-01T00:00:00.000Z',
+              }
+            : null,
+      };
+      await page.goto(path);
+      await expect(
+        page.locator('.auth-side').getByLabel('Football training film'),
+      ).toHaveJSProperty('paused', false);
+    }
+    session = null;
+    await page.goto('/');
+    const panel = page.locator('.management-photo');
+    await panel.scrollIntoViewIfNeeded();
+    const video = panel.getByLabel('Football training film');
+    await expect(video).toHaveJSProperty('paused', false);
+    await expect(video).toHaveAttribute('src', film.mobile);
+    await expect(video).toHaveJSProperty('error', null);
+    const descriptionIds = await page
+      .locator('video')
+      .evaluateAll((videos) => videos.map((video) => video.getAttribute('aria-describedby')));
+    expect(new Set(descriptionIds).size).toBe(descriptionIds.length);
+  }
+});
+
+test('phone layouts and reduced motion do not download split-screen video', async ({ page }) => {
+  test.skip(!film.ready, 'Actual video exports are required.');
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (/hero-(desktop|mobile)\.mp4/.test(request.url())) requests.push(request.url());
+  });
+  for (const [width, reducedMotion] of [
+    [390, 'no-preference'],
+    [834, 'reduce'],
+  ] as const) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ reducedMotion });
+    await page.goto('/sign-in');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const panel = page.locator('.auth-side');
+    if (width < 768) await expect(panel).not.toBeVisible();
+    else await expect(panel).toBeVisible();
+    await expect(panel.getByLabel('Football training film')).not.toHaveAttribute('src');
+    expect(requests).toHaveLength(0);
+  }
 });

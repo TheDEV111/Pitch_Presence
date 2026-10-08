@@ -10,13 +10,14 @@ import type { Providers, Subaccount, VerifiedCharge } from '../../src/infrastruc
 import { JobRunner } from '../../src/infrastructure/jobs.js';
 import { seedTeam, bankProviders } from '../fixtures/team.js';
 import { testDatabase } from '../fixtures/database.js';
-const password = 'a memorable staff passphrase';
+const password = 'StaffPass123!';
 const config = loadConfig({
   NODE_ENV: 'test',
   APP_URL: 'http://localhost:3000',
   DATABASE_URL: 'postgresql://localhost/test',
   SESSION_SECRET: 'tenant-session-secret-0000000000000000000',
   QR_SIGNING_SECRET: 'tenant-qr-secret-000000000000000000000000',
+  PAYMENT_MODE: 'PAYSTACK',
   PAYSTACK_SECRET_KEY: 'sk_test_placeholder',
   LOG_LEVEL: 'silent',
 });
@@ -241,7 +242,7 @@ describe('staff onboarding and recovery', () => {
     const response = await request('POST', '/auth/password-reset/confirm', {
       email,
       otp: code,
-      password: 'a different memorable passphrase',
+      password: 'Different123!',
     });
     expect(response.statusCode).toBe(200);
     expect((await request('GET', '/auth/me', undefined, session)).statusCode).toBe(401);
@@ -249,7 +250,7 @@ describe('staff onboarding and recovery', () => {
       (
         await request('POST', '/auth/staff-login', {
           email,
-          password: 'a different memorable passphrase',
+          password: 'Different123!',
         })
       ).statusCode,
     ).toBe(200);
@@ -298,7 +299,7 @@ describe('interrupted staff signup', () => {
     await request('POST', '/auth/staff-register', { name: 'Coach', email, password });
     const before = await fixture.db.user.findUniqueOrThrow({ where: { email } });
     for (const input of [
-      { email, password: 'a different secret passphrase' },
+      { email, password: 'AnotherPass123!' },
       { email: a.email, password },
       { email: pa.email, password },
     ]) {

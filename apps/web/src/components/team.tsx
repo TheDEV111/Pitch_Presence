@@ -6,7 +6,8 @@ import { dateLabel } from '@/lib/format';
 import { Button, Feedback, Field, PageTitle, ActionLink, Loading, Logo } from './ui';
 import { useCollection, useResource } from './data';
 import type { AuthSession } from './auth';
-import { Photo } from './photo';
+import { TransferAccountSettings } from './manual-payments';
+import { HeroFilm } from './hero-film';
 export type Overview = OverviewResponse;
 export type TeamSettings = TeamSettingsResponse;
 export function TeamOnboarding({ session }: { session: AuthSession }) {
@@ -54,7 +55,7 @@ export function TeamOnboarding({ session }: { session: AuthSession }) {
     <main id="main" className="auth-layout">
       <div className="auth-side">
         <Logo />
-        <Photo eager kind="coach" />
+        <HeroFilm presentation="split" fallbackKind="coach" />
         <div className="auth-photo-caption">
           <h2>
             YOUR TEAM.
@@ -113,7 +114,7 @@ export function TeamOnboarding({ session }: { session: AuthSession }) {
     </main>
   );
 }
-export function TeamSettingsPage() {
+export function TeamSettingsPage({ user }: { user: UserResponse }) {
   const bankFieldId = useId();
   const settings = useResource<TeamSettings>('/management/team');
   const staff = useCollection<UserResponse>('/management/staff');
@@ -124,7 +125,9 @@ export function TeamSettingsPage() {
     revokedAt: string | null;
     acceptedAt: string | null;
   }>('/management/staff-invitations');
-  const banks = useResource<{ code: string; name: string }[]>('/management/banks');
+  const banks = useResource<{ code: string; name: string }[]>(
+    settings.data && settings.data.paymentMode !== 'MANUAL' ? '/management/banks' : null,
+  );
   const [email, setEmail] = useState('');
   const [link, setLink] = useState<string | null>(null);
   const [bankCode, setBankCode] = useState('');
@@ -200,7 +203,7 @@ export function TeamSettingsPage() {
         eyebrow="MANAGEMENT / TEAM SETTINGS"
         title={settings.data?.team.name ?? 'Your team'}
       >
-        Your coaching team and the bank account for online dues.
+        Your coaching team and the account that receives your team’s dues.
       </PageTitle>
       <Feedback error={error ?? settings.error} success={message} />
       {settings.loading ? (
@@ -289,144 +292,154 @@ export function TeamSettingsPage() {
             )}
           </section>
           <section className="panel">
-            <h2>Team bank account</h2>
-            <p>
-              Online dues go to your team’s bank account. The platform takes no commission; your
-              team pays the payment provider’s fees.
-            </p>
-            {settings.data?.paymentProfile && (
-              <div className="notice">
-                <div>
-                  <strong>{settings.data.paymentProfile.accountName}</strong>
-                  <p>Account ending {settings.data.paymentProfile.accountLast4} · Connected</p>
-                </div>
-              </div>
-            )}
-            <Feedback error={banks.error} />
-            {banks.loading && <p role="status">Loading Nigerian banks…</p>}
-            {!banks.loading && (banks.error || !banks.data?.length) && (
-              <div className="form-stack">
-                <p className="helper">
-                  {banks.error
-                    ? 'We couldn’t load the banks. Try again to continue bank setup.'
-                    : 'No supported Nigerian banks are available right now. Try again shortly.'}
-                </p>
-                <Button variant="secondary" onClick={banks.reload}>
-                  Retry loading banks
-                </Button>
-              </div>
-            )}
-            {pending ? (
-              <div className="form-stack">
-                <div className="notice">
-                  Bank connection awaiting review. Any previously connected account remains active.
-                  Checking status does not create another bank destination.
-                </div>
-                <Button
-                  busy={busy}
-                  onClick={() =>
-                    run(async () => {
-                      await api('/management/bank/reconcile', { method: 'POST', body: {} });
-                      await settings.reload();
-                      setMessage(
-                        'Status checked. If review continues, contact support before retrying setup.',
-                      );
-                    })
-                  }
-                >
-                  Check connection status
-                </Button>
-              </div>
+            {settings.data?.paymentMode === 'MANUAL' ? (
+              <TransferAccountSettings
+                settings={settings.data}
+                user={user}
+                reload={settings.reload}
+              />
             ) : (
               <>
-                <form className="form-stack" onSubmit={resolve}>
-                  <label className="field">
-                    <span id={`${bankFieldId}-label`}>Bank</span>
-                    <select
-                      aria-labelledby={`${bankFieldId}-label`}
-                      aria-describedby={`${bankFieldId}-help`}
-                      required
-                      disabled={!banksAvailable || busy}
-                      value={bankCode}
-                      onChange={(e) => {
-                        setBankCode(e.target.value);
-                        setAccountName('');
-                        setConfirm(false);
-                      }}
+                <h2>Team bank account</h2>
+                <p>
+                  Online dues go to your team’s bank account. The platform takes no commission; your
+                  team pays the payment provider’s fees.
+                </p>
+                {settings.data?.paymentProfile && (
+                  <div className="notice">
+                    <div>
+                      <strong>{settings.data.paymentProfile.accountName}</strong>
+                      <p>Account ending {settings.data.paymentProfile.accountLast4} · Connected</p>
+                    </div>
+                  </div>
+                )}
+                <Feedback error={banks.error} />
+                {banks.loading && <p role="status">Loading Nigerian banks…</p>}
+                {!banks.loading && (banks.error || !banks.data?.length) && (
+                  <div className="form-stack">
+                    <p className="helper">
+                      {banks.error
+                        ? 'We couldn’t load the banks. Try again to continue bank setup.'
+                        : 'No supported Nigerian banks are available right now. Try again shortly.'}
+                    </p>
+                    <Button variant="secondary" onClick={banks.reload}>
+                      Retry loading banks
+                    </Button>
+                  </div>
+                )}
+                {pending ? (
+                  <div className="form-stack">
+                    <div className="notice">
+                      Bank connection awaiting review. Any previously connected account remains
+                      active. Checking status does not create another bank destination.
+                    </div>
+                    <Button
+                      busy={busy}
+                      onClick={() =>
+                        run(async () => {
+                          await api('/management/bank/reconcile', { method: 'POST', body: {} });
+                          await settings.reload();
+                          setMessage(
+                            'Status checked. If review continues, contact support before retrying setup.',
+                          );
+                        })
+                      }
                     >
-                      <option value="">
-                        {banks.loading ? 'Loading Nigerian banks…' : 'Select a Nigerian bank'}
-                      </option>
-                      {banks.data?.map((bank) => (
-                        <option key={bank.code} value={bank.code}>
-                          {bank.name}
-                        </option>
-                      ))}
-                    </select>
-                    <small id={`${bankFieldId}-help`}>
-                      Choose the bank that will receive your team’s dues through Paystack.
-                    </small>
-                  </label>
-                  <Field
-                    label="Ten-digit account number"
-                    inputMode="numeric"
-                    pattern="[0-9]{10}"
-                    minLength={10}
-                    maxLength={10}
-                    value={accountNumber}
-                    onChange={(e) => {
-                      setNumber(e.target.value.replace(/\D/g, ''));
-                      setAccountName('');
-                      setConfirm(false);
-                    }}
-                    required
-                  />
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    busy={busy}
-                    disabled={!banksAvailable || !bankCode || accountNumber.length !== 10}
-                  >
-                    Resolve account name
-                  </Button>
-                </form>
-                {accountName && (
-                  <form className="form-stack" onSubmit={connect}>
-                    <Field label="Resolved account name" value={accountName} readOnly />
-                    <label className="confirmation-check">
-                      <input
-                        type="checkbox"
-                        checked={confirm}
-                        onChange={(e) => setConfirm(e.target.checked)}
+                      Check connection status
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <form className="form-stack" onSubmit={resolve}>
+                      <label className="field">
+                        <span id={`${bankFieldId}-label`}>Bank</span>
+                        <select
+                          aria-labelledby={`${bankFieldId}-label`}
+                          aria-describedby={`${bankFieldId}-help`}
+                          required
+                          disabled={!banksAvailable || busy}
+                          value={bankCode}
+                          onChange={(e) => {
+                            setBankCode(e.target.value);
+                            setAccountName('');
+                            setConfirm(false);
+                          }}
+                        >
+                          <option value="">
+                            {banks.loading ? 'Loading Nigerian banks…' : 'Select a Nigerian bank'}
+                          </option>
+                          {banks.data?.map((bank) => (
+                            <option key={bank.code} value={bank.code}>
+                              {bank.name}
+                            </option>
+                          ))}
+                        </select>
+                        <small id={`${bankFieldId}-help`}>
+                          Choose the bank that will receive your team’s dues through Paystack.
+                        </small>
+                      </label>
+                      <Field
+                        label="Ten-digit account number"
+                        inputMode="numeric"
+                        pattern="[0-9]{10}"
+                        minLength={10}
+                        maxLength={10}
+                        value={accountNumber}
+                        onChange={(e) => {
+                          setNumber(e.target.value.replace(/\D/g, ''));
+                          setAccountName('');
+                          setConfirm(false);
+                        }}
                         required
                       />
-                      I confirm this account is authorised to receive this team’s dues.
-                    </label>
-                    <p className="helper">
-                      Resolving an account name does not establish account ownership. Confirm the
-                      details before connecting.
-                    </p>
-                    <Field
-                      label="Confirm your password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      maxLength={128}
-                      required
-                    />
-                    <Button type="submit" busy={busy} disabled={!confirm}>
-                      {settings.data?.paymentsReady
-                        ? 'Replace team bank account'
-                        : 'Connect team bank account'}
-                    </Button>
-                    {settings.data?.paymentsReady && (
-                      <p className="helper">
-                        New checkouts will use this account. Existing checkouts keep their original
-                        destination.
-                      </p>
+                      <Button
+                        type="submit"
+                        variant="secondary"
+                        busy={busy}
+                        disabled={!banksAvailable || !bankCode || accountNumber.length !== 10}
+                      >
+                        Resolve account name
+                      </Button>
+                    </form>
+                    {accountName && (
+                      <form className="form-stack" onSubmit={connect}>
+                        <Field label="Resolved account name" value={accountName} readOnly />
+                        <label className="confirmation-check">
+                          <input
+                            type="checkbox"
+                            checked={confirm}
+                            onChange={(e) => setConfirm(e.target.checked)}
+                            required
+                          />
+                          I confirm this account is authorised to receive this team’s dues.
+                        </label>
+                        <p className="helper">
+                          Resolving an account name does not establish account ownership. Confirm
+                          the details before connecting.
+                        </p>
+                        <Field
+                          label="Confirm your password"
+                          type="password"
+                          autoComplete="current-password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          maxLength={128}
+                          required
+                        />
+                        <Button type="submit" busy={busy} disabled={!confirm}>
+                          {settings.data?.paymentsReady
+                            ? 'Replace team bank account'
+                            : 'Connect team bank account'}
+                        </Button>
+                        {settings.data?.paymentsReady && (
+                          <p className="helper">
+                            New checkouts will use this account. Existing checkouts keep their
+                            original destination.
+                          </p>
+                        )}
+                      </form>
                     )}
-                  </form>
+                  </>
                 )}
               </>
             )}

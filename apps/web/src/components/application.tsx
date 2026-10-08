@@ -34,7 +34,9 @@ export function Application({ route }: { route: string }) {
       : '/sign-in',
   );
   const [expired, setExpired] = useState(false);
+  const [removed, setRemoved] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
+  const [returnTo, setReturnTo] = useState('/' + route);
   const publicAuth = [
     'sign-in',
     'player/sign-in',
@@ -64,6 +66,11 @@ export function Application({ route }: { route: string }) {
     }
   }
   useEffect(() => {
+    if (route === 'management/dues') {
+      const month = new URLSearchParams(window.location.search).get('month');
+      if (month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+        setReturnTo(`/management/dues?month=${month}`);
+    }
     if (!publicAuth && route !== 'launch') void load();
     else setLoading(false);
     const onExpire = () => {
@@ -73,19 +80,38 @@ export function Application({ route }: { route: string }) {
       setCsrfToken(null);
     };
     const connection = () => setOnline(navigator.onLine);
+    const onRemoved = (event: Event) => {
+      setRemoved((event as CustomEvent<string>).detail);
+      setUser(null);
+      setSession(null);
+      setCsrfToken(null);
+    };
     connection();
     window.addEventListener('session-expired', onExpire);
+    window.addEventListener('player-removed', onRemoved);
     window.addEventListener('online', connection);
     window.addEventListener('offline', connection);
     return () => {
       window.removeEventListener('session-expired', onExpire);
+      window.removeEventListener('player-removed', onRemoved);
       window.removeEventListener('online', connection);
       window.removeEventListener('offline', connection);
     };
     // Each navigation mounts a fresh application; authentication is kept in memory only.
   }, []);
-  if (route === 'launch') return <InstalledLaunch />;
   if (publicAuth) return <AuthPage mode={route} />;
+  if (removed)
+    return (
+      <main id="main" className="not-found">
+        <Logo />
+        <h1>Your team access has ended.</h1>
+        <p role="alert">{removed}</p>
+        <Link className="button secondary" href="/player/sign-in">
+          Back to player sign in
+        </Link>
+      </main>
+    );
+  if (route === 'launch') return <InstalledLaunch />;
   if (route === 'check-in')
     return <CheckIn user={user} loading={loading} error={error} authenticated={authenticated} />;
   if (loading)
@@ -111,7 +137,7 @@ export function Application({ route }: { route: string }) {
         ) : (
           <Link
             className="button primary"
-            href={`${signInPath}?returnTo=${encodeURIComponent('/' + route)}`}
+            href={`${signInPath}?returnTo=${encodeURIComponent(returnTo)}`}
           >
             Sign in
           </Link>
@@ -160,7 +186,7 @@ export function Application({ route }: { route: string }) {
   else if (route === 'management/training') content = <Training />;
   else if (route.startsWith('management/training/'))
     content = <TrainingSession id={route.split('/')[2]} />;
-  else if (route === 'management/team') content = <TeamSettingsPage />;
+  else if (route === 'management/team') content = <TeamSettingsPage user={user} />;
   else if (route === 'management/players') content = <Players />;
   else if (route === 'management/dues') content = <ManagementDues />;
   else if (route === 'management/audit') content = <Audit />;
@@ -208,6 +234,11 @@ export function Application({ route }: { route: string }) {
       <div className="app-content">
         <header className="app-topbar">
           <span className="eyebrow">{session?.team?.name ?? 'PitchPresence'}</span>
+          {manager && (
+            <Link href="/account#receipt-notifications-title" className="text-action">
+              Receipt notifications
+            </Link>
+          )}
           <Link href="/account" className="topbar-user" aria-label={`Account for ${user.name}`}>
             <span className="live-dot" />
             {user.name}

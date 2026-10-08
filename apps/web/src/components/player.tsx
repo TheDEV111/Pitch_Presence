@@ -6,6 +6,7 @@ import type { AttendanceResponse, PaymentResponse, UserResponse } from '@pitchpr
 import { api } from '@/lib/api';
 import { dateLabel, money, monthLabel, parseMoney } from '@/lib/format';
 import type { AttendanceRecord, DuesRecord } from '@/lib/types';
+import { ReceiptUpload, ReceiptDownload } from './manual-payments';
 import { AuthForm, type AuthSession } from './auth';
 import { useCollection, useResource } from './data';
 import { ActionLink, Button, Empty, Feedback, Field, Loading, Logo, PageTitle, Status } from './ui';
@@ -47,7 +48,14 @@ export function PlayerHome({ user }: { user: UserResponse }) {
           ) : dues.data?.items[0] ? (
             <>
               <h2>{monthLabel(dues.data.items[0].month)}</h2>
-              <Status value={dues.data.items[0].status} />
+              <Status
+                value={
+                  dues.data.items[0].status === 'NOT_PAID' &&
+                  dues.data.items[0].payments.some((p) => p.receipt?.status === 'PENDING')
+                    ? 'PROOF_SUBMITTED'
+                    : dues.data.items[0].status
+                }
+              />
               <p>
                 {dues.data.items[0].minimumAmount
                   ? `Monthly minimum: ${money(dues.data.items[0].minimumAmount)}`
@@ -295,8 +303,8 @@ export function PlayerDues({ user }: { user: UserResponse }) {
   return (
     <>
       <PageTitle eyebrow="DUES / YOUR MONTHS" title="A month sorted. One less thing.">
-        Pay in the app, or ask management to confirm an external payment. A month becomes paid once
-        your payment is confirmed.
+        Transfer to your team’s bank account and submit your receipt, or ask staff to record a
+        payment. Your month is paid after staff confirmation.
       </PageTitle>
       <div className="split-grid">
         <section className="panel">
@@ -331,7 +339,14 @@ export function PlayerDues({ user }: { user: UserResponse }) {
                       : 'Minimum not configured'}
                   </small>
                 </div>
-                <Status value={row.status} />
+                <Status
+                  value={
+                    row.status === 'NOT_PAID' &&
+                    row.payments.some((p) => p.receipt?.status === 'PENDING')
+                      ? 'PROOF_SUBMITTED'
+                      : row.status
+                  }
+                />
               </button>
             ))
           )}
@@ -355,40 +370,46 @@ export function PlayerDues({ user }: { user: UserResponse }) {
                 value={records.items.find((r) => r.id === selected.id)?.status ?? selected.status}
               />
               <Feedback error={error} />
-              {(records.items.find((r) => r.id === selected.id)?.status ?? selected.status) ===
-                'NOT_PAID' && (
-                <form className="form-stack" onSubmit={pay}>
-                  <Field
-                    label="Amount in naira"
-                    inputMode="decimal"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    help={
-                      selected.minimumAmount
-                        ? `Minimum ${money(selected.minimumAmount)}`
-                        : 'Management must configure this month before checkout.'
-                    }
-                    required
-                  />
-                  <Button
-                    busy={busy}
-                    disabled={
-                      !selected.paymentAvailable || (!!pending && pending.status !== 'FAILED')
-                    }
-                    type="submit"
-                  >
-                    Continue to Paystack
-                    <ArrowUpRight size={17} />
-                  </Button>
-                  {selected.paymentsReady === false && (
-                    <p className="helper">
-                      Online payments are waiting for your team’s bank setup. Contact your coach or
-                      manager.
-                    </p>
-                  )}
-                  <small>Payment is confirmed by the server after Paystack verification.</small>
-                </form>
-              )}
+              <ReceiptUpload
+                key={selected.id}
+                dues={records.items.find((r) => r.id === selected.id) ?? selected}
+                reload={records.reload}
+              />
+              {selected.paymentMode === 'PAYSTACK' &&
+                (records.items.find((r) => r.id === selected.id)?.status ?? selected.status) ===
+                  'NOT_PAID' && (
+                  <form className="form-stack" onSubmit={pay}>
+                    <Field
+                      label="Amount in naira"
+                      inputMode="decimal"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      help={
+                        selected.minimumAmount
+                          ? `Minimum ${money(selected.minimumAmount)}`
+                          : 'Management must configure this month before checkout.'
+                      }
+                      required
+                    />
+                    <Button
+                      busy={busy}
+                      disabled={
+                        !selected.paymentAvailable || (!!pending && pending.status !== 'FAILED')
+                      }
+                      type="submit"
+                    >
+                      Continue to Paystack
+                      <ArrowUpRight size={17} />
+                    </Button>
+                    {selected.paymentsReady === false && (
+                      <p className="helper">
+                        Online payments are waiting for your team’s bank setup. Contact your coach
+                        or manager.
+                      </p>
+                    )}
+                    <small>Payment is confirmed by the server after Paystack verification.</small>
+                  </form>
+                )}
               {pending && (
                 <div className="notice">
                   <Status value={pending.status} />
@@ -408,12 +429,32 @@ export function PlayerDues({ user }: { user: UserResponse }) {
                       <strong>{money(p.amount)}</strong>
                       <small>
                         {p.provider === 'EXTERNAL'
-                          ? 'External · management confirmation'
+                          ? p.receipt
+                            ? 'Bank transfer · receipt proof'
+                            : 'External · management confirmation'
                           : 'Paystack'}
                         {p.reversedAt ? ' · reversed' : ''}
                       </small>
                     </div>
-                    <Status value={p.reversedAt ? 'REVERSED' : p.status} />
+                    <div>
+                      <Status
+                        value={
+                          p.reversedAt
+                            ? 'REVERSED'
+                            : p.receipt?.status === 'PENDING'
+                              ? 'PROOF_SUBMITTED'
+                              : p.status
+                        }
+                      />
+                      {p.receipt && (
+                        <>
+                          <ReceiptDownload receipt={p.receipt} />
+                          {p.receipt.reason && (
+                            <p className="helper">Staff note: {p.receipt.reason}</p>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : (

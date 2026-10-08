@@ -5,3 +5,13 @@ node_modules
 .env.*
 coverage
 *.pdf
+**/.next
+**/.turbo
+.media-source
+.media-work
+.agents
+.codex
+.aws
+playwright-report
+test-results
+*.zip

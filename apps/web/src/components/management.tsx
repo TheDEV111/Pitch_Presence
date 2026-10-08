@@ -7,11 +7,14 @@ import { api, RequestError, setCsrfToken } from '@/lib/api';
 import { currentMonth, dateLabel, money, monthLabel, parseMoney } from '@/lib/format';
 import type { DuesRecord, PaymentRecord } from '@/lib/types';
 import { useCollection, useResource } from './data';
+import { ReceiptReview } from './manual-payments';
+import { ReceiptNotifications } from './receipt-notifications';
 import { Confirmation } from './training';
 import { Button, Empty, Feedback, Field, Loading, PageTitle, Status } from './ui';
 type Invitation = { id: string; expiresAt: string; revokedAt: string | null; createdAt: string };
 export function Players() {
-  const players = useCollection<UserResponse>('/management/players');
+  const [showRemoved, setShowRemoved] = useState(false);
+  const players = useCollection<UserResponse>(`/management/players?includeRemoved=${showRemoved}`);
   const invitations = useCollection<Invitation>('/management/invitations');
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -20,6 +23,7 @@ export function Players() {
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [name, setName] = useState('');
   const [toggle, setToggle] = useState<UserResponse | null>(null);
+  const [removing, setRemoving] = useState<UserResponse | null>(null);
   const [invite, setInvite] = useState<{ registrationUrl: string; expiresAt: string } | null>(null);
   const [revoke, setRevoke] = useState<string | null>(null);
   async function createInvite() {
@@ -86,6 +90,23 @@ export function Players() {
       setBusy(false);
     }
   }
+  async function removePlayer() {
+    if (!removing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/management/players/${removing.id}/remove`, { method: 'POST', body: {} });
+      setMessage(
+        `${removing.name} has been removed from the team. Their signed-in devices can no longer access it.`,
+      );
+      setRemoving(null);
+      await players.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
       <PageTitle eyebrow="MANAGEMENT / PLAYERS" title="The people behind the game.">
@@ -111,6 +132,14 @@ export function Players() {
             help="Search covers the players loaded below. Load more to include additional players."
           />
           <Feedback error={players.error} />
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={showRemoved}
+              onChange={(e) => setShowRemoved(e.target.checked)}
+            />{' '}
+            Include removed players
+          </label>
           {players.loading ? (
             <Loading />
           ) : !players.items.length ? (
@@ -126,13 +155,20 @@ export function Players() {
                     <small>{player.email}</small>
                     <Status
                       value={
-                        !player.isVerified ? 'UNVERIFIED' : player.active ? 'ACTIVE' : 'INACTIVE'
+                        player.removedAt
+                          ? 'REMOVED'
+                          : !player.isVerified
+                            ? 'UNVERIFIED'
+                            : player.active
+                              ? 'ACTIVE'
+                              : 'INACTIVE'
                       }
                     />
                   </div>
                   <div className="row-actions">
                     <button
                       className="text-action"
+                      disabled={!!player.removedAt}
                       onClick={() => {
                         setEditing(player);
                         setName(player.name);
@@ -142,11 +178,22 @@ export function Players() {
                     </button>
                     <button
                       className="text-action"
-                      disabled={!player.isVerified}
+                      disabled={!player.isVerified || !!player.removedAt}
                       onClick={() => setToggle(player)}
                     >
                       {player.active ? 'Deactivate' : 'Activate'}
                     </button>
+                    {!player.removedAt && (
+                      <button
+                        className="text-action"
+                        onClick={() => {
+                          setError(null);
+                          setRemoving(player);
+                        }}
+                      >
+                        Remove from team
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -243,6 +290,20 @@ export function Players() {
             : 'The verified player can sign in again and participate in future sessions.'}
         </Confirmation>
       )}
+      {removing && (
+        <Confirmation
+          error={error}
+          title={`Remove ${removing.name} from the team?`}
+          busy={busy}
+          onCancel={() => setRemoving(null)}
+          onConfirm={removePlayer}
+          action="Remove player"
+        >
+          All their signed-in devices will lose team access. Their payment and attendance history
+          stays available to staff. Removal cannot be undone using Activate; use Deactivate for a
+          temporary suspension.
+        </Confirmation>
+      )}
       {revoke && (
         <Confirmation
           error={error}
@@ -262,8 +323,19 @@ type Period = { month: string; minimumAmount: number; frozenAt: string | null };
 export function ManagementDues() {
   const [month, setMonth] = useState(currentMonth());
   const [filter, setFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+  useEffect(() => {
+    const target = new URLSearchParams(window.location.search).get('month');
+    if (target && /^\d{4}-(0[1-9]|1[0-2])$/.test(target) && target <= currentMonth())
+      setMonth(target);
+  }, []);
   const records = useCollection<DuesRecord>(
-    `/management/dues?month=${month}${filter ? `&status=${filter}` : ''}`,
+    `/management/dues?month=${month}${filter ? `&status=${filter}` : ''}${query ? `&search=${encodeURIComponent(query)}` : ''}`,
   );
   const periods = useCollection<Period>('/management/dues-periods?limit=100');
   const [amount, setAmount] = useState('');
@@ -342,7 +414,7 @@ export function ManagementDues() {
   return (
     <>
       <PageTitle eyebrow="MANAGEMENT / MONTHLY DUES" title="Keep the months in order.">
-        Set the monthly minimum and confirm payments made outside the app.
+        Set the monthly minimum, review receipts and confirm payments received by the team.
       </PageTitle>
       <Feedback error={error} success={message} />
       <div className="split-grid">
@@ -354,6 +426,14 @@ export function ManagementDues() {
             </Button>
           </div>
           <div className="filter-row">
+            <Field
+              label="Search player name"
+              type="search"
+              maxLength={100}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Enter a player’s name"
+            />
             <Field
               label="Month"
               type="month"
@@ -377,7 +457,11 @@ export function ManagementDues() {
           {records.loading ? (
             <Loading />
           ) : !records.items.length ? (
-            <Empty>No eligible player records for this month and status.</Empty>
+            <Empty>
+              {query
+                ? 'No players match this name for the selected month and status.'
+                : 'No eligible player records for this month and status.'}
+            </Empty>
           ) : (
             records.items.map((row) => (
               <article className="management-dues-row" key={row.id}>
@@ -386,12 +470,19 @@ export function ManagementDues() {
                     <strong>{row.player?.name ?? 'Player'}</strong>
                     <small>{monthLabel(row.month)}</small>
                   </div>
-                  <Status value={row.status} />
+                  <Status
+                    value={
+                      row.status === 'NOT_PAID' &&
+                      row.payments.some((p) => p.receipt?.status === 'PENDING')
+                        ? 'PROOF_SUBMITTED'
+                        : row.status
+                    }
+                  />
                 </div>
                 {row.status === 'NOT_PAID' && (
                   <Button
                     variant="secondary"
-                    disabled={!period}
+                    disabled={!period || row.payments.some((p) => p.receipt?.status === 'PENDING')}
                     onClick={() => {
                       setManual(row);
                       setManualAmount(period ? String(period.minimumAmount / 100) : '');
@@ -403,12 +494,13 @@ export function ManagementDues() {
                   </Button>
                 )}
                 {row.payments.map((p) => (
-                  <div className="payment-line" key={p.id}>
+                  <div className="payment-line receipt-payment-line" key={p.id}>
                     <span>
                       {money(p.amount)} ·{' '}
                       {p.provider === 'EXTERNAL' ? 'External payment' : 'Paystack'} ·{' '}
                       {p.reversedAt ? 'Reversed' : p.status.toLowerCase()}
                     </span>
+                    {p.receipt && <ReceiptReview payment={p} reload={records.reload} />}
                     {p.provider === 'EXTERNAL' && p.status === 'SUCCESS' && !p.reversedAt && (
                       <button
                         className="text-action"
@@ -451,7 +543,7 @@ export function ManagementDues() {
               </div>
             ) : (
               <p className="helper">
-                The minimum becomes fixed once checkout or external payment activity begins.
+                The minimum becomes fixed once receipt or payment activity begins.
               </p>
             )}
             <Button busy={busy} disabled={!!period?.frozenAt || periods.loading} type="submit">
@@ -629,6 +721,7 @@ export function Account({ user }: { user: UserResponse }) {
         Manage your account details and signed-in devices.
       </PageTitle>
       <Feedback error={error} />
+      {user.role === 'MANAGER' && <ReceiptNotifications />}
       <div className="split-grid">
         <section className="panel">
           <ShieldCheck size={30} />

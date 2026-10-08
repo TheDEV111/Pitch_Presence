@@ -1,4 +1,5 @@
 'use client';
+import { PASSWORD_PATTERN } from '@pitchpresence/shared';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
@@ -7,7 +8,7 @@ import { api, RequestError, setCsrfToken } from '@/lib/api';
 import { pendingVerification, rememberVerification, forgetVerification } from '@/lib/onboarding';
 import { safeReturn } from '@/lib/format';
 import { Button, Feedback, Field, Logo } from './ui';
-import { Photo } from './photo';
+import { HeroFilm } from './hero-film';
 export type AuthSession = AuthResponse;
 export function sessionHome(session: AuthSession) {
   if (session.user.role === 'PLAYER') return '/home';
@@ -91,7 +92,11 @@ export function AuthForm({
         location.replace(sessionHome(session));
       }
     } catch (e) {
-      if (!(e instanceof RequestError && e.status === 401)) setAuthError((e as Error).message);
+      if (e instanceof RequestError && e.code === 'PLAYER_REMOVED') {
+        setCsrfToken(null);
+        if (player) setError(e.message);
+      } else if (!(e instanceof RequestError && e.status === 401))
+        setAuthError((e as Error).message);
     } finally {
       setAuthLoaded(true);
     }
@@ -382,8 +387,8 @@ export function AuthForm({
                 type={show ? 'text' : 'password'}
                 inputMode={player ? 'numeric' : undefined}
                 autoComplete={stage === 'login' ? 'current-password' : 'new-password'}
-                pattern={player ? '[0-9]{4}' : undefined}
-                minLength={player ? 4 : stage === 'login' ? 1 : 15}
+                pattern={player ? '[0-9]{4}' : stage === 'login' ? undefined : PASSWORD_PATTERN}
+                minLength={player ? 4 : stage === 'login' ? 1 : 8}
                 maxLength={player ? 4 : 128}
                 value={credential}
                 onChange={(e) =>
@@ -391,7 +396,7 @@ export function AuthForm({
                 }
                 help={
                   !player && stage !== 'login'
-                    ? '15–128 characters. A memorable passphrase works well.'
+                    ? 'At least 8 characters: uppercase, lowercase, number and symbol.'
                     : undefined
                 }
                 required
@@ -482,7 +487,10 @@ export function AuthPage({ mode }: { mode: string }) {
     <main id="main" className="auth-layout">
       <div className="auth-side">
         <Logo />
-        <Photo eager kind={['register', 'signup'].includes(mode) ? 'training' : 'coach'} />
+        <HeroFilm
+          presentation="split"
+          fallbackKind={['register', 'signup'].includes(mode) ? 'training' : 'coach'}
+        />
         <div className="auth-photo-caption">
           <span className="eyebrow">SHOW UP. GET STUCK IN.</span>
           <h2>

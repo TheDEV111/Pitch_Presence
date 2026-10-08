@@ -77,3 +77,7 @@ Restart `make start` and `make worker`, then use a fresh private browser window.
 ## Bank connection recovery
 
 A PENDING/REVIEW bank profile can reflect a provider success followed by a lost response. Use `/management/bank/reconcile` to find its immutable profile ID in Paystack subaccount metadata. Do not create another subaccount until the outcome is established. If none is found or the provider destination is inactive/mismatched, keep REVIEW and investigate through Paystack support/operator tooling. If manual intervention becomes necessary, record team, profile ID, reason and operator in the append-only audit log; do not edit a READY destination or historical payment snapshots. Validate fee routing and account resolution with Paystack test credentials before live use. Team managers must confirm they are authorised to receive team dues; resolution alone is not ownership verification.
+
+## Manual transfer launch
+
+Use `PAYMENT_MODE=MANUAL` while Paystack setup is deferred. Apply the additive receipt/account migration and configure a stable separate `DATA_ENCRYPTION_SECRET`. Follow [Manual payments](manual-payments.md) for private receipt review, storage quotas, retention and email-confirmed bank changes. The API and worker still need Resend for bank-change codes and notices; Paystack credentials are optional in this mode. Back up receipt data and the data encryption key.

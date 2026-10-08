@@ -16,6 +16,7 @@ const config = loadConfig({
   DATABASE_URL: 'postgresql://localhost/test',
   SESSION_SECRET: 'invariants-session-secret-000000000000000',
   QR_SIGNING_SECRET: 'invariants-qr-secret-00000000000000000000',
+  PAYMENT_MODE: 'PAYSTACK',
   LOG_LEVEL: 'silent',
 });
 let fixture: Awaited<ReturnType<typeof testDatabase>>,

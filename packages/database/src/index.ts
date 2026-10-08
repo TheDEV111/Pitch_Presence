@@ -6,6 +6,7 @@ export type {
   Attendance,
   MonthlyDues,
   Payment,
+  PaymentReceipt,
   OtpPurpose,
   BackgroundJob,
 } from '@prisma/client';

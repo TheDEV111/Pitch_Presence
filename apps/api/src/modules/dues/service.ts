@@ -1,3 +1,5 @@
+import type { TransferService } from '../team/transfer.js';
+import { receiptSelect, presentReceipt } from '../receipts/presentation.js';
 import type { PrismaClient, User } from '@pitchpresence/database';
 import {
   actorTeam,
@@ -43,7 +45,11 @@ export async function recomputeDues(tx: Tx, duesId: string) {
   });
 }
 export class DuesService {
-  constructor(private db: PrismaClient) {}
+  constructor(
+    private db: PrismaClient,
+    private mode: 'MANUAL' | 'PAYSTACK' = 'MANUAL',
+    private transfers?: TransferService,
+  ) {}
   async configure(month: string, minimumAmount: number, managerId: string, requestId: string) {
     const teamId = await actorTeam(this.db, managerId);
     return this.db.$transaction(async (tx) => {
@@ -97,6 +103,7 @@ export class DuesService {
             paidAt: true,
             reversedAt: true,
             providerReference: true,
+            receipt: { select: receiptSelect },
           },
         },
       },
@@ -110,6 +117,13 @@ export class DuesService {
           where: { id: team.paymentProfileId, teamId: player.teamId!, status: 'READY' },
         })
       : null;
+    const transferAccount = (await this.transfers?.current(player.teamId!)) ?? null;
+    const receiptAccounts = await this.db.teamTransferAccount.findMany({
+      where: { teamId: player.teamId! },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: { id: true, bankName: true, accountName: true, accountLast4: true },
+    });
     return {
       nextCursor: records.length > limit ? records[limit - 1]!.month : null,
       items: records.slice(0, limit).map((r) => {
@@ -118,8 +132,16 @@ export class DuesService {
           ...r,
           minimumAmount: p?.minimumAmount ?? null,
           currency: 'NGN',
-          paymentsReady: !!ready,
-          paymentAvailable: r.status === 'NOT_PAID' && !!p && !!ready,
+          paymentMode: this.mode,
+          transferAccount,
+          receiptAccounts,
+          proofAvailable: r.status === 'NOT_PAID' && !!p && receiptAccounts.length > 0,
+          payments: r.payments.map((payment) => ({
+            ...payment,
+            receipt: payment.receipt ? presentReceipt(payment.receipt) : null,
+          })),
+          paymentsReady: this.mode === 'PAYSTACK' && !!ready,
+          paymentAvailable: this.mode === 'PAYSTACK' && r.status === 'NOT_PAID' && !!p && !!ready,
         };
       }),
     };
@@ -130,6 +152,7 @@ export class DuesService {
     cursor: string | undefined,
     status: 'PAID' | 'NOT_PAID' | undefined,
     teamId: string,
+    search?: string,
   ) {
     await teamCursor(this.db, 'MonthlyDues', teamId, cursor);
     const [year, number] = month.split('-').map(Number) as [number, number];
@@ -142,7 +165,10 @@ export class DuesService {
         role: 'PLAYER',
         isVerified: true,
         activatedAt: { lt: end },
-        ...(month === localMonth() ? { active: true } : {}),
+        OR: [{ removedAt: null }, { removedAt: { gte: new Date(`${month}-01T00:00:00+01:00`) } }],
+        ...(month === localMonth()
+          ? { AND: [{ OR: [{ active: true }, { removedAt: { not: null } }] }] }
+          : {}),
       },
     });
     requireRule(
@@ -155,7 +181,13 @@ export class DuesService {
       for (const player of eligible) await resolveDues(tx, player, month);
     });
     const rows = await this.db.monthlyDues.findMany({
-      where: { teamId, month, playerId: { in: eligible.map((p) => p.id) }, status },
+      where: {
+        teamId,
+        month,
+        playerId: { in: eligible.map((p) => p.id) },
+        status,
+        ...(search ? { player: { name: { contains: search, mode: 'insensitive' as const } } } : {}),
+      },
       take: limit + 1,
       orderBy: { id: 'asc' },
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -171,12 +203,19 @@ export class DuesService {
             markedBy: true,
             paidAt: true,
             needsReview: true,
+            receipt: { select: receiptSelect },
           },
         },
       },
     });
     return {
-      items: rows.slice(0, limit),
+      items: rows.slice(0, limit).map((row) => ({
+        ...row,
+        payments: row.payments.map((p) => ({
+          ...p,
+          receipt: p.receipt ? presentReceipt(p.receipt) : null,
+        })),
+      })),
       nextCursor: rows.length > limit ? rows[limit - 1]!.id : null,
     };
   }
@@ -217,6 +256,14 @@ export class DuesService {
         409,
         'DUES_ALREADY_PAID',
         'This month is already paid.',
+      );
+      requireRule(
+        !(await tx.paymentReceipt.findFirst({
+          where: { monthlyDuesId: duesId, status: 'PENDING' },
+        })),
+        409,
+        'RECEIPT_PENDING',
+        'Review the pending receipt before recording another payment.',
       );
       await tx.duesPeriod.update({
         where: { id: period.id },

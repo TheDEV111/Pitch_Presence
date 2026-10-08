@@ -91,6 +91,7 @@ export function Status({ value }: { value: string }) {
           NOT_PAID: 'Not paid',
           NOT_CHECKED_IN: 'Not checked in',
           PENDING: 'Payment pending',
+          PROOF_SUBMITTED: 'Proof submitted',
         } as Record<string, string>
       )[value] ?? value.charAt(0) + value.slice(1).toLowerCase()}
     </span>

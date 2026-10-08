@@ -46,7 +46,7 @@ Reusable invitations expire after seven days and can be revoked. Registration fo
 
 PINs and staff passwords use Argon2id; OTP hashes are keyed digests; device tokens are random and hashed. Email-job OTPs are AES-GCM encrypted and erased from job payloads after delivery or final email failure. Session expiry is an absolute 30 days. Resends supersede older challenges. PIN and password resets revoke all remembered devices. Deactivation revokes devices without deleting history.
 
-Coaches/managers self-register with a 15–128-character password, verify email, then create a team or accept an email-bound staff invitation. Staff use password login; players use PIN login. Both coach/manager titles map to MANAGER. Email is globally unique and membership cannot transfer. The legacy manager PIN provisioning CLI has been removed.
+Coaches/managers self-register with a 8–128-character password with uppercase, lowercase, a number and a symbol, verify email, then create a team or accept an email-bound staff invitation. Staff use password login; players use PIN login. Both coach/manager titles map to MANAGER. Email is globally unique and membership cannot transfer. The legacy manager PIN provisioning CLI has been removed.
 
 ## Attendance invariants
 

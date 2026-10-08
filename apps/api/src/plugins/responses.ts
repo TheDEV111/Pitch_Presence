@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pushSettingsResponse } from '../modules/notifications/schema.js';
 import {
   userResponse,
   teamResponse,
@@ -10,10 +11,31 @@ import {
   trainingResponse,
   duesResponse,
   registrationResponse,
+  receiptResponse,
+  receiptAccountResponse,
+  transferAccountResponse,
 } from '@pitchpresence/shared';
 export function responseSchema(method: string, url: string): z.ZodTypeAny {
+  if (url === '/api/v1/management/notifications/push')
+    return method === 'GET' ? pushSettingsResponse : z.object({ enabled: z.boolean() });
   if (url === '/api/v1/auth/staff-register' || url === '/api/v1/auth/register')
     return registrationResponse;
+  if (url === '/api/v1/me/dues/:id/receipt') return receiptResponse;
+  if (url === '/api/v1/management/receipts/:id/review')
+    return z.object({ receipt: receiptResponse, dues: duesResponse });
+  if (url === '/api/v1/me/transfer-account')
+    return z.object({ account: transferAccountResponse.nullable() });
+  if (url === '/api/v1/management/transfer-account/request')
+    return z.object({
+      changeId: z.string().uuid(),
+      expiresAt: z.string().datetime(),
+      message: z.string(),
+    });
+  if (url === '/api/v1/management/transfer-account/confirm')
+    return z.object({
+      confirmed: z.boolean(),
+      transferAccount: transferAccountResponse.nullable(),
+    });
   if (url === '/api/v1/teams') return teamResponse;
   if (url === '/api/v1/management/overview') return overviewResponse;
   if (
@@ -70,6 +92,7 @@ export function responseSchema(method: string, url: string): z.ZodTypeAny {
   if (url === '/api/v1/management/players' && method === 'GET')
     return z.object({ items: z.array(userResponse), nextCursor: z.string().uuid().nullable() });
   if (url === '/api/v1/management/players/:id') return userResponse;
+  if (url === '/api/v1/management/players/:id/remove') return userResponse;
   if (url === '/api/v1/me/dues')
     return z.object({
       items: z.array(
@@ -78,6 +101,10 @@ export function responseSchema(method: string, url: string): z.ZodTypeAny {
           currency: z.literal('NGN'),
           paymentAvailable: z.boolean(),
           paymentsReady: z.boolean(),
+          paymentMode: z.enum(['MANUAL', 'PAYSTACK']),
+          transferAccount: transferAccountResponse.nullable(),
+          proofAvailable: z.boolean(),
+          receiptAccounts: z.array(receiptAccountResponse),
           payments: z.array(
             z.object({
               id: z.string().uuid(),
@@ -88,6 +115,7 @@ export function responseSchema(method: string, url: string): z.ZodTypeAny {
               paidAt: z.string().datetime().nullable(),
               reversedAt: z.string().datetime().nullable(),
               providerReference: z.string().nullable(),
+              receipt: receiptResponse.nullable(),
             }),
           ),
         }),

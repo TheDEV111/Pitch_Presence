@@ -20,6 +20,12 @@ export class PaymentService {
     private providers: Providers,
   ) {}
   async initialize(player: User, input: PaymentInput, idempotencyKey: string, requestId: string) {
+    requireRule(
+      this.config.PAYMENT_MODE === 'PAYSTACK',
+      409,
+      'PAYSTACK_PAUSED',
+      'Online payments are paused. Use team bank transfers and receipts.',
+    );
     const teamId = await actorTeam(this.db, player.id);
     const key = `${teamId}:${player.id}:${idempotencyKey}`;
     const fingerprint = digest(JSON.stringify(input));

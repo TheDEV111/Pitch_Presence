@@ -97,8 +97,14 @@ retains the poster and permits explicit resume. A text description sits below th
 video. The interactive walkthrough
 remains available. `film.json.ready` becomes true only after both exports finish;
 unrendered builds show a photograph instead of an empty video player.
-The previous MP4s contain baked-in phone overlays. Readiness is cleared until the
-clean football exports are generated and imported from the new workflow artifact.
+The clean workflow artifact is now imported and marked ready. Its ZIP is stored
+outside the public directory. Recorded asset checks pass; decoding confirms
+15 seconds and 360 frames for both exports. Desktop/tablet sign-in, registration,
+recovery, team creation and staff invitation panels use the video behind their
+existing copy. The landing management panel also uses it. Split panels select the
+portrait derivative and expose a pause/resume control. They make no automatic
+video request on phone layouts or with reduced motion. Existing forms remain
+usable when media fails.
 
 Photographs have responsive widths 320/640/960/1440/1920, ≤250KB through 640px and
 ≤500KB for larger sizes. Antonio/Inter WOFF2 subsets include Latin, punctuation and

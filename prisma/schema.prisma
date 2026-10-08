@@ -56,6 +56,7 @@ model User {
   pendingInvitationId String?              @db.Uuid
   isVerified          Boolean              @default(false)
   active              Boolean              @default(false)
+  removedAt           DateTime?            @db.Timestamptz(3)
   activatedAt         DateTime?            @db.Timestamptz(3)
   createdAt           DateTime             @default(now()) @db.Timestamptz(3)
   sessions            DeviceSession[]
@@ -63,6 +64,7 @@ model User {
   participants        SessionParticipant[]
   dues                MonthlyDues[]
   payments            Payment[]
+  pushSubscriptions   PushSubscription[]
 
   @@unique([teamId, id])
 }
@@ -104,8 +106,26 @@ model DeviceSession {
   lastUsedAt DateTime  @default(now()) @db.Timestamptz(3)
   revokedAt  DateTime? @db.Timestamptz(3)
   createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  pushSubscription PushSubscription?
 
+  @@unique([id, userId])
   @@index([userId])
+}
+
+model PushSubscription {
+  id                    String        @id @default(uuid()) @db.Uuid
+  teamId                String        @db.Uuid
+  userId                String        @db.Uuid
+  sessionId             String        @unique @db.Uuid
+  endpointHash          String        @unique
+  encryptedSubscription String
+  vapidPublicKey        String
+  createdAt             DateTime      @default(now()) @db.Timestamptz(3)
+  user                  User          @relation(fields: [teamId, userId], references: [teamId, id], onDelete: Cascade)
+  session               DeviceSession @relation(fields: [sessionId, userId], references: [id, userId], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+  @@index([teamId])
 }
 
 model TrainingSession {
@@ -209,6 +229,7 @@ model Payment {
   reversedAt        DateTime?       @db.Timestamptz(3)
   reversedBy        String?         @db.Uuid
   reversalReason    String?
+  receipt           PaymentReceipt?
   needsReview       Boolean         @default(false)
   createdAt         DateTime        @default(now()) @db.Timestamptz(3)
 
@@ -264,12 +285,13 @@ model IdempotencyRecord {
 }
 
 model Team {
-  id               String   @id @default(uuid()) @db.Uuid
-  name             String
-  createdBy        String   @db.Uuid
-  paymentProfileId String?  @unique @db.Uuid
-  createdAt        DateTime @default(now()) @db.Timestamptz(3)
-  users            User[]
+  id                String   @id @default(uuid()) @db.Uuid
+  name              String
+  createdBy         String   @db.Uuid
+  paymentProfileId  String?  @unique @db.Uuid
+  transferAccountId String?  @unique @db.Uuid
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  users             User[]
 }
 
 enum PaymentSetupStatus {
@@ -290,4 +312,67 @@ model TeamPaymentProfile {
   createdAt      DateTime           @default(now()) @db.Timestamptz(3)
 
   @@unique([teamId, id])
+}
+
+enum ReceiptStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model TeamTransferAccount {
+  id              String   @id @default(uuid()) @db.Uuid
+  teamId          String   @db.Uuid
+  bankName        String
+  accountName     String
+  encryptedNumber String
+  accountLast4    String
+  configuredBy    String   @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([teamId, id])
+}
+
+model BankAccountChange {
+  id                String    @id @default(uuid()) @db.Uuid
+  teamId            String    @db.Uuid
+  requestedBy       String    @db.Uuid
+  action            String
+  previousAccountId String?   @db.Uuid
+  bankName          String?
+  accountName       String?
+  accountLast4      String?
+  encryptedNumber   String?
+  otpHash           String
+  attempts          Int       @default(0)
+  expiresAt         DateTime  @db.Timestamptz(3)
+  consumedAt        DateTime? @db.Timestamptz(3)
+  appliedAt         DateTime? @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([teamId, createdAt])
+}
+
+model PaymentReceipt {
+  id            String        @id @default(uuid()) @db.Uuid
+  teamId        String        @db.Uuid
+  playerId      String        @db.Uuid
+  monthlyDuesId String        @db.Uuid
+  accountId     String        @db.Uuid
+  paymentId     String        @unique @db.Uuid
+  payment       Payment       @relation(fields: [paymentId], references: [id])
+  fileName      String
+  mimeType      String
+  size          Int
+  content       Bytes?
+  sha256        String
+  status        ReceiptStatus @default(PENDING)
+  reason        String?
+  reviewedBy    String?       @db.Uuid
+  reviewedAt    DateTime?     @db.Timestamptz(3)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@unique([teamId, sha256])
+  @@index([teamId, playerId])
+  @@index([monthlyDuesId, status])
 }

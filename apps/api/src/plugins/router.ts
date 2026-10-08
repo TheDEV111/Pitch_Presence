@@ -27,6 +27,8 @@ type Options = {
   query?: boolean;
   raw?: boolean;
   summary?: string;
+  bodyLimit?: number;
+  binary?: boolean;
 };
 export class Router {
   readonly spec: {
@@ -101,7 +103,7 @@ export class Router {
       target: 'openApi3',
     });
     const errors = Object.fromEntries(
-      [401, 403, 404, 409, 422, 429, 503].map((status) => [
+      [401, 403, 404, 409, 410, 413, 422, 429, 503].map((status) => [
         status,
         {
           description: 'Structured API error',
@@ -143,7 +145,9 @@ export class Router {
       responses: {
         200: {
           description: 'Successful operation',
-          content: { 'application/json': { schema: successSchema } },
+          content: options.binary
+            ? { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } }
+            : { 'application/json': { schema: successSchema } },
         },
         ...errors,
       },
@@ -151,8 +155,12 @@ export class Router {
     this.app.route({
       method,
       url,
+      ...(options.bodyLimit ? { bodyLimit: options.bodyLimit } : {}),
       handler: async (request, reply) => {
-        const session = await this.auth.resolve(request.cookies[cookieName(this.config)]);
+        const session = await this.auth.resolve(
+          request.cookies[cookieName(this.config)],
+          access !== 'public',
+        );
         request.authSession = session;
         if (access !== 'public') {
           requireRule(session, 401, 'AUTHENTICATION_REQUIRED', 'Please sign in.');

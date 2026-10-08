@@ -37,6 +37,7 @@ export interface VerifiedCharge {
   paidAt: string | null;
 }
 export interface Providers {
+  sendBankNotice(email: string, subject: string, text: string, key: string): Promise<void>;
   sendStaffInvitation(email: string, url: string, key: string): Promise<void>;
   banks(): Promise<Bank[]>;
   resolveBank(bankCode: string, accountNumber: string): Promise<string>;
@@ -105,6 +106,14 @@ export function createProviders(config: Config): Providers {
     bankCode: data.settlement_bank,
   });
   return {
+    async sendBankNotice(email, subject, text, key) {
+      if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured');
+      await request('https://api.resend.com/emails', config.RESEND_API_KEY, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': key },
+        body: JSON.stringify({ from: config.EMAIL_FROM, to: [email], subject, text }),
+      });
+    },
     async banks() {
       const banks = new Map<string, Bank>();
       const cursors = new Set<string>();

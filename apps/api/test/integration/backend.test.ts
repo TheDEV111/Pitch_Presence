@@ -15,6 +15,7 @@ const config = loadConfig({
   DATABASE_URL: 'postgresql://localhost/pitchpresence',
   SESSION_SECRET: 'test-session-secret-000000000000000000',
   QR_SIGNING_SECRET: 'test-qr-secret-00000000000000000000000',
+  PAYMENT_MODE: 'PAYSTACK',
   PAYSTACK_SECRET_KEY: 'sk_test_placeholder',
   LOG_LEVEL: 'silent',
 });

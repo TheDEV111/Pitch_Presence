@@ -78,6 +78,7 @@ export async function testDatabase() {
       rows: r.rows.map((row) =>
         r.fields.map((f) => {
           const v = row[f.name];
+          if (f.dataTypeID === 17) return v === null ? null : Array.from(v as Uint8Array);
           if (v instanceof Date) return v.toISOString();
           if (typeof v === 'bigint') return v.toString();
           if (f.dataTypeID === 3802 || f.dataTypeID === 114)

@@ -34,7 +34,8 @@ export function duesRoutes(r: Router, service: DuesService) {
     'GET',
     '/api/v1/management/dues',
     schemas.duesQuery,
-    (i, c) => service.management(i.month ?? localMonth(), i.limit, i.cursor, i.status, c.teamId),
+    (i, c) =>
+      service.management(i.month ?? localMonth(), i.limit, i.cursor, i.status, c.teamId, i.search),
     { query: true },
   );
   r.add('POST', '/api/v1/dues/:id/mark-paid', schemas.markPaid, (i, c) =>

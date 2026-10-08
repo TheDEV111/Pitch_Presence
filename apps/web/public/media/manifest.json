@@ -128,15 +128,16 @@
     }
   ],
   "film": {
-    "duration": 12,
+    "composition": "original-football-footage-clean",
+    "duration": 15,
     "outputs": [
       {
         "file": "hero-desktop.mp4",
         "width": 1920,
         "height": 1080,
-        "bytes": 2571553,
-        "sha256": "6b7ffe50843e1b2b1292af00561328958165c3a4753ee26f671ca9c6002741e7",
-        "duration": 12,
+        "bytes": 2629840,
+        "sha256": "248c21853440758ea94e9f137c4cee03d1b61c2d97d193da049caf9691bd6d83",
+        "duration": 15,
         "fps": 24,
         "codec": "h264",
         "audio": false
@@ -145,9 +146,9 @@
         "file": "hero-mobile.mp4",
         "width": 720,
         "height": 900,
-        "bytes": 1225019,
-        "sha256": "a5453ba346ebaaa21659bea3298dabb761f9605e887375498f232e5bf89d47c5",
-        "duration": 12,
+        "bytes": 1310681,
+        "sha256": "272bc56a7160ec82657dcbd1b4eb7dd292d56c053f0531d83aaaa08ef89d9697",
+        "duration": 15,
         "fps": 24,
         "codec": "h264",
         "audio": false
@@ -155,10 +156,31 @@
     ],
     "recipe": "scripts/render-hero-video.mjs",
     "scenes": [
-      "MORE FOOTBALL.",
-      "OPEN TRAINING ATTENDANCE.",
-      "SCAN. ARRIVAL RECORDED.",
-      "LESS ADMIN."
+      {
+        "source": "warmup",
+        "offset": 0,
+        "duration": 3
+      },
+      {
+        "source": "coaching",
+        "offset": 0,
+        "duration": 3
+      },
+      {
+        "source": "warmup",
+        "offset": 3,
+        "duration": 3
+      },
+      {
+        "source": "coaching",
+        "offset": 3,
+        "duration": 3
+      },
+      {
+        "source": "coaching",
+        "offset": 6,
+        "duration": 3
+      }
     ]
   }
 }

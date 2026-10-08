@@ -1,11 +1,19 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import film from '../../public/media/film.json';
 import { Photo } from './photo';
 import { createHeroPlayback } from '@/lib/hero-playback';
 
-export function HeroFilm() {
+export function HeroFilm({
+  presentation = 'hero',
+  fallbackKind = 'training',
+}: {
+  presentation?: 'hero' | 'split';
+  fallbackKind?: 'training' | 'coach';
+}) {
+  const split = presentation === 'split';
+  const descriptionId = useId();
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLDivElement>(null);
   const playback = useRef<ReturnType<typeof createHeroPlayback> | null>(null);
@@ -19,13 +27,14 @@ export function HeroFilm() {
     const visual = frame.current;
     if (!film.ready || !element || !visual) return;
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
+    const wide = matchMedia('(min-width: 768px)');
     const controller = createHeroPlayback({
       video: element,
       source: () =>
-        matchMedia('(max-width: 767px)').matches
+        split || matchMedia('(max-width: 767px)').matches
           ? { video: film.mobile, poster: film.mobilePoster }
           : { video: film.desktop, poster: film.desktopPoster },
-      hidden: () => document.hidden,
+      hidden: () => document.hidden || (split && !wide.matches),
       reducedMotion: () => motion.matches,
       onActivate: () => setLoaded(true),
       onFailure: () => {
@@ -48,32 +57,39 @@ export function HeroFilm() {
     observer.observe(visual);
     document.addEventListener('visibilitychange', hide);
     motion.addEventListener('change', reduce);
+    wide.addEventListener('change', hide);
     return () => {
       observer.disconnect();
       document.removeEventListener('visibilitychange', hide);
       motion.removeEventListener('change', reduce);
+      wide.removeEventListener('change', hide);
       controller.dispose();
       playback.current = null;
     };
-  }, []);
-  if (!film.ready) return <Photo eager />;
+  }, [split]);
+  if (!film.ready) return <Photo eager kind={fallbackKind} />;
   return (
-    <div className="hero-film">
+    <div className={`hero-film${split ? ' split-film' : ''}`}>
+      {split && (
+        <div className="split-film-mobile">
+          <Photo kind={fallbackKind} />
+        </div>
+      )}
       <div className="film-visual" ref={frame}>
         {(!loaded || failed) &&
           (failed || posterFailed ? (
-            <Photo eager />
+            <Photo eager kind={fallbackKind} />
           ) : (
             <picture>
-              <source media="(max-width: 767px)" srcSet={film.mobilePoster} />
+              <source media={split ? 'all' : '(max-width: 767px)'} srcSet={film.mobilePoster} />
               <img
                 className="photo"
                 src={film.desktopPoster}
                 width={1920}
                 height={1080}
                 alt="Football players warming up on a pitch."
-                loading="eager"
-                fetchPriority="high"
+                loading={split ? 'lazy' : 'eager'}
+                fetchPriority={split ? 'auto' : 'high'}
                 onError={() => setPosterFailed(true)}
               />
             </picture>
@@ -84,8 +100,8 @@ export function HeroFilm() {
           muted
           playsInline
           hidden={!loaded || failed}
-          aria-label="PitchPresence training-day film"
-          aria-describedby="film-description"
+          aria-label={split ? 'Football training film' : 'PitchPresence training-day film'}
+          aria-describedby={descriptionId}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
@@ -105,11 +121,13 @@ export function HeroFilm() {
         )}
         {failed && (
           <p className="film-error" role="status">
-            The film could not play. Explore the walkthrough below.
+            {split
+              ? 'The film could not play.'
+              : 'The film could not play. Explore the walkthrough below.'}
           </p>
         )}
       </div>
-      <p id="film-description" className="film-description">
+      <p id={descriptionId} className={split ? 'sr-only' : 'film-description'}>
         {film.description}
       </p>
     </div>

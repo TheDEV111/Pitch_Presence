@@ -14,7 +14,7 @@ frontend:
 backend:
 	npm run dev:api
 
-# Run in a separate terminal for email and payment jobs.
+# Run in a separate terminal for email, payment and device notification jobs.
 worker:
 	npm run worker
 
@@ -23,4 +23,4 @@ help:
 	@echo "make dev       Alias for make start"
 	@echo "make frontend  Start only the frontend"
 	@echo "make backend   Start only the backend"
-	@echo "make worker    Start the email and payment worker"
+	@echo "make worker    Start the email, payment and notification worker"

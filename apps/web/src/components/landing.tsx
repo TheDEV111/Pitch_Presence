@@ -230,8 +230,9 @@ export function Landing() {
               MONTHS ARE PAID.
             </h2>
             <p>
-              Give every player a clear monthly history. Pay in the app, or have management confirm
-              a payment made elsewhere. Both belong in the same record.
+              Give every player a clear monthly history. Transfer to the team account and upload a
+              receipt, or have management record a payment. Staff confirmation keeps the record
+              clear.
             </p>
             <div className="plain-list">
               <span>
@@ -241,7 +242,7 @@ export function Landing() {
                 <Check size={18} /> Payment status after confirmation
               </span>
               <span>
-                <Check size={18} /> In-app and external payments together
+                <Check size={18} /> Receipts and staff confirmations together
               </span>
             </div>
             <a className="text-action" href="#how-it-works">
@@ -252,7 +253,7 @@ export function Landing() {
         </section>
         <section className="management-story container">
           <div className="management-photo">
-            <Photo />
+            <HeroFilm presentation="split" />
           </div>
           <div>
             <p className="eyebrow">04 / MADE FOR THE TOUCHLINE</p>

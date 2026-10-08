@@ -1,4 +1,8 @@
 import Fastify from 'fastify';
+import { ReceiptService } from './modules/receipts/service.js';
+import { NotificationService } from './modules/notifications/service.js';
+import { notificationRoutes } from './modules/notifications/routes.js';
+import { receiptRoutes } from './modules/receipts/routes.js';
 import { TeamService } from './modules/team/service.js';
 import { teamRoutes } from './modules/team/routes.js';
 import cookie from '@fastify/cookie';
@@ -136,8 +140,11 @@ export async function buildApp(
   const auth = new AuthService(db, config);
   const training = new TrainingService(db, config);
   const attendance = new AttendanceService(db, training);
-  const dues = new DuesService(db);
   const team = new TeamService(db, config, providers);
+  const transfers = team.transfers;
+  const dues = new DuesService(db, config.PAYMENT_MODE, transfers);
+  const receipts = new ReceiptService(db, !!config.VAPID_PUBLIC_KEY);
+  const notifications = new NotificationService(db, config);
   const payments = new PaymentService(db, config, providers);
   const router = new Router(app, config, auth, db);
   authRoutes(router, auth, config);
@@ -147,6 +154,8 @@ export async function buildApp(
   trainingRoutes(router, training);
   attendanceRoutes(router, attendance);
   duesRoutes(router, dues);
+  receiptRoutes(router, receipts);
+  notificationRoutes(router, notifications);
   paymentRoutes(router, payments);
   auditRoutes(router);
   router.add('GET', '/api/v1/health/live', empty, () => ({ status: 'ok' }), { access: 'public' });
@@ -183,7 +192,7 @@ export async function buildApp(
   return {
     app,
     db,
-    services: { auth, training, attendance, dues, payments, team },
+    services: { auth, training, attendance, dues, payments, team, transfers, receipts },
     openapi: router.spec,
   };
 }

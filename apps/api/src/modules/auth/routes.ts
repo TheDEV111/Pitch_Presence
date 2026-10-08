@@ -137,6 +137,7 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
         where: { id: c.session.id },
         data: { revokedAt: new Date() },
       });
+      await r.db.pushSubscription.deleteMany({ where: { sessionId: c.session.id } });
       c.reply.clearCookie(cookieName(config), { path: '/' });
       return { loggedOut: true };
     },
@@ -178,6 +179,9 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
         data: { revokedAt: new Date() },
       });
       requireRule(result.count, 404, 'NOT_FOUND', 'Session not found.');
+      await r.db.pushSubscription.deleteMany({
+        where: { sessionId: c.params.id, userId: c.user.id },
+      });
       return { revoked: true };
     },
     { access: 'authenticated' },

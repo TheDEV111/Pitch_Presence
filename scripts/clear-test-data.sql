@@ -6,6 +6,10 @@ SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
 TRUNCATE TABLE
+  public."PushSubscription",
+  public."PaymentReceipt",
+  public."BankAccountChange",
+  public."TeamTransferAccount",
   public."Attendance",
   public."SessionParticipant",
   public."TrainingSession",

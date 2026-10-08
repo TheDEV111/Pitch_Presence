@@ -64,7 +64,11 @@ rendered film, so they also contain no overlays.
 Review both crops, complete duration, image quality, playback and absence of
 text and diagrams. Numeric export checks do not replace picture review.
 
-The existing MP4s still contain overlays. `film.json.ready` stays false until the
-clean replacements are rendered; the hero shows photography in the meantime.
-This session cannot download the masters and has no configured current
-FFmpeg/FFprobe, so actual replacement binaries remain pending the media workflow.
+The clean workflow artifact has been imported and `film.json.ready` is true. Both
+exports pass recorded checksums, budgets and metadata acceptance. A local decoder
+confirmed 360 frames and a 15-second duration in each file. The ZIP is archived
+outside the public directory. Desktop and tablet authentication/onboarding split
+panels and the landing management panel now use the same film with its portrait
+derivative. Phone split layouts retain their previous form/photo presentation and
+do not request the video. Reduced motion displays a poster. Browser and real-device
+playback still require the browser checks and staging review.

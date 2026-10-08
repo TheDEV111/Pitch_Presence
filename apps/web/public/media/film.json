@@ -1,5 +1,5 @@
 {
-  "ready": false,
+  "ready": true,
   "duration": 15,
   "desktop": "/media/hero-desktop.mp4",
   "mobile": "/media/hero-mobile.mp4",

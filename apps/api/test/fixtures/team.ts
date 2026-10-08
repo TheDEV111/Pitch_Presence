@@ -2,8 +2,14 @@ import type { PrismaClient, User } from '@pitchpresence/database';
 import type { Providers } from '../../src/infrastructure/providers.js';
 export const bankProviders: Pick<
   Providers,
-  'banks' | 'resolveBank' | 'createSubaccount' | 'findSubaccount' | 'sendStaffInvitation'
+  | 'sendBankNotice'
+  | 'banks'
+  | 'resolveBank'
+  | 'createSubaccount'
+  | 'findSubaccount'
+  | 'sendStaffInvitation'
 > = {
+  sendBankNotice: async () => {},
   banks: async () => [{ code: '058', name: 'Test Bank' }],
   resolveBank: async () => 'TEST TEAM',
   createSubaccount: async (input) => ({

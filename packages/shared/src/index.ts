@@ -3,6 +3,16 @@ export const id = z.string().uuid();
 export const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 export const email = z.string().trim().toLowerCase().email().max(254);
 export const pin = z.string().regex(/^\d{4}$/);
+export const PASSWORD_PATTERN = String.raw`(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,128}`;
+export const password = z
+  .string()
+  .min(8)
+  .max(128)
+  .regex(
+    new RegExp(`^${PASSWORD_PATTERN}$`),
+    'Use at least 8 characters with uppercase, lowercase, a number and a symbol.',
+  );
+export const RECEIPT_MAX_BYTES = 2 * 1024 * 1024;
 export const amount = z.number().int().min(1).max(2_000_000_000);
 export const pagination = z
   .object({ cursor: id.optional(), limit: z.coerce.number().int().min(1).max(100).default(25) })
@@ -15,14 +25,12 @@ export const schemas = {
     .object({
       name: z.string().trim().min(1).max(100),
       email,
-      password: z.string().min(15).max(128),
+      password,
       invitationToken: z.string().min(32).max(200).optional(),
     })
     .strict(),
   staffLogin: z.object({ email, password: z.string().min(1).max(128) }).strict(),
-  passwordReset: z
-    .object({ email, otp: z.string().regex(/^\d{6}$/), password: z.string().min(15).max(128) })
-    .strict(),
+  passwordReset: z.object({ email, otp: z.string().regex(/^\d{6}$/), password }).strict(),
   team: z.object({ name: z.string().trim().min(2).max(100) }).strict(),
   staffInvitation: z.object({ email }).strict(),
   bankResolve: z
@@ -39,6 +47,46 @@ export const schemas = {
       password: z.string().min(1).max(128),
     })
     .strict(),
+  transferChange: z.discriminatedUnion('action', [
+    z
+      .object({
+        action: z.literal('SET'),
+        bankName: z.string().trim().min(2).max(100),
+        accountName: z.string().trim().min(2).max(200),
+        accountNumber: z.string().regex(/^\d{10}$/),
+        password: z.string().min(1).max(128),
+      })
+      .strict(),
+    z.object({ action: z.literal('REMOVE'), password: z.string().min(1).max(128) }).strict(),
+  ]),
+  transferConfirm: z.object({ changeId: id, otp: z.string().regex(/^\d{6}$/) }).strict(),
+  receiptUpload: z
+    .object({
+      amount,
+      accountId: id,
+      fileName: z
+        .string()
+        .max(120)
+        .regex(/^[A-Za-z0-9 _().-]+\.(pdf|png)$/i),
+      mimeType: z.enum(['application/pdf', 'image/png']),
+      content: z
+        .string()
+        .min(4)
+        .max(Math.ceil(RECEIPT_MAX_BYTES / 3) * 4)
+        .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+      reference: z.string().trim().max(200).optional(),
+    })
+    .strict(),
+  receiptReview: z
+    .object({
+      decision: z.enum(['APPROVE', 'REJECT']),
+      reason: z.string().trim().min(5).max(500).optional(),
+    })
+    .strict()
+    .refine(
+      (i) => i.decision !== 'REJECT' || !!i.reason,
+      'Give a reason for rejecting this receipt.',
+    ),
   register: z
     .object({
       name: z.string().trim().min(1).max(100),
@@ -77,6 +125,7 @@ export const schemas = {
     .object({
       month: month.optional(),
       status: z.enum(['PAID', 'NOT_PAID']).optional(),
+      search: z.string().trim().max(100).optional(),
       cursor: id.optional(),
       limit: z.coerce.number().int().min(1).max(100).default(25),
     })
@@ -110,6 +159,7 @@ export const userResponse = z.object({
   role: z.enum(['PLAYER', 'MANAGER']),
   isVerified: z.boolean(),
   active: z.boolean(),
+  removedAt: z.string().datetime().nullable().optional(),
   activatedAt: z.string().datetime().nullable(),
   teamId: id.nullable(),
 });
@@ -193,8 +243,51 @@ export const paymentProfileResponse = z.object({
   accountLast4: z.string().length(4),
   createdAt: z.string().datetime(),
 });
+export const transferAccountResponse = z.object({
+  id,
+  bankName: z.string(),
+  accountName: z.string(),
+  accountNumber: z.string().regex(/^\d{10}$/),
+  createdAt: z.string().datetime(),
+});
+export const receiptAccountResponse = z.object({
+  id,
+  bankName: z.string(),
+  accountName: z.string(),
+  accountLast4: z.string().length(4),
+});
+export type ReceiptAccountResponse = z.infer<typeof receiptAccountResponse>;
+export const receiptResponse = z.object({
+  id,
+  paymentId: id,
+  accountId: id,
+  fileName: z.string(),
+  mimeType: z.enum(['application/pdf', 'image/png']),
+  size: z.number().int(),
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED']),
+  reason: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  reviewedAt: z.string().datetime().nullable(),
+  reviewedBy: id.nullable(),
+  fileAvailable: z.boolean(),
+});
+export type ReceiptResponse = z.infer<typeof receiptResponse>;
+export type TransferAccountResponse = z.infer<typeof transferAccountResponse>;
 export const teamSettingsResponse = z.object({
   team: teamResponse,
+  paymentMode: z.enum(['MANUAL', 'PAYSTACK']),
+  transferAccount: transferAccountResponse.nullable(),
+  pendingBankChange: z
+    .object({
+      id,
+      action: z.enum(['SET', 'REMOVE']),
+      accountName: z.string().nullable(),
+      bankName: z.string().nullable(),
+      accountLast4: z.string().nullable(),
+      requestedBy: id,
+      expiresAt: z.string().datetime(),
+    })
+    .nullable(),
   paymentsReady: z.boolean(),
   paymentProfile: paymentProfileResponse.nullable(),
   latestSetup: paymentProfileResponse.nullable(),

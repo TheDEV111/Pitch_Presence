@@ -10,7 +10,7 @@ Email verification and device login return `{user, team, nextStep, csrfToken}`. 
 
 ## Staff and player onboarding
 
-1. Staff submit `POST /auth/staff-register` with `{name, email, password}`. Passwords are 15–128 characters; request roles/team IDs are rejected.
+1. Staff submit `POST /auth/staff-register` with `{name, email, password}`. Passwords are 8–128 characters with uppercase, lowercase, a number and a symbol; request roles/team IDs are rejected.
 2. Verify through `POST /auth/verify-email` with `{email, otp}`. `nextStep` is `CREATE_TEAM`, `ACCEPT_INVITATION`, or `READY`; `/auth/me` preserves it across devices.
 3. `POST /teams` accepts `{name}` for verified unassigned staff. The dashboard's players, dues and bank tasks are optional and resumable.
 4. Staff sign in through `POST /auth/staff-login` with `{email,password}`. Recovery uses `/auth/password-reset/request` then `/auth/password-reset/confirm` with `{email,otp,password}`; reset revokes all devices and requires login again.
@@ -96,3 +96,10 @@ Relevant codes: TEAM_REQUIRED, TEAM_ALREADY_ASSIGNED, INVITATION_PENDING, TEAM_P
 Players can read only their own records. Unknown or foreign payment IDs return 404. Management audit and operations endpoints are manager-only. Webhook acknowledgments mean durable receipt; settlement is asynchronous through the worker.
 
 Every team-scoped read or mutation derives its team from the cookie session. Foreign record lookups return 404; foreign QR claims are invalid and manual attendance rejects unavailable or cross-team players with 403; client-supplied tenant IDs cannot select a team. Operations counts and audits cover only the caller’s team. External payment histories use provider `EXTERNAL`, never `MANUAL`.
+
+## Manual transfers and receipts
+
+Device notification routes, the dues `search` query and audited player removal
+are documented in [Receipt notifications and roster controls](receipt-notifications-roster.md).
+
+`PAYMENT_MODE=MANUAL` is the current default. Bank transfers, private proof uploads, staff review and email-confirmed bank changes follow [Manual payments](manual-payments.md). Paystack checkout/setup endpoints are paused in this mode; earlier transaction verification remains available when credentials are configured.

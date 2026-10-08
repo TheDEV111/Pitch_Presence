@@ -22,6 +22,11 @@ function harness() {
   };
   const fetch = vi.fn();
   const skipWaiting = vi.fn();
+  const showNotification = vi.fn().mockResolvedValue(undefined);
+  const clients = {
+    matchAll: vi.fn().mockResolvedValue([]),
+    openWindow: vi.fn().mockResolvedValue(undefined),
+  };
   runInNewContext(
     serviceWorkerSource({ version: 'new', staticAssets: ['/_next/static/build/app.js'] }),
     {
@@ -31,6 +36,8 @@ function harness() {
           listeners[name] = handler;
         },
         skipWaiting,
+        registration: { showNotification },
+        clients,
       },
       caches,
       fetch,
@@ -54,7 +61,7 @@ function harness() {
     });
     return respondWith;
   }
-  return { listeners, cache, caches, fetch, skipWaiting, request };
+  return { listeners, cache, caches, fetch, skipWaiting, request, showNotification, clients };
 }
 
 it('never intercepts API writes, API reads, route data, or unapproved assets', () => {
@@ -117,4 +124,65 @@ it('installs only essential public assets and waits for open windows to close', 
   h.listeners.activate({ waitUntil });
   await waitUntil.mock.calls[1][0];
   expect(h.caches.delete).toHaveBeenCalledExactlyOnceWith('pitchpresence-static-old');
+});
+
+it('push messages show generic lock-screen text and cannot supply an external navigation target', async () => {
+  const h = harness();
+  const waitUntil = vi.fn();
+  h.listeners.push({
+    data: {
+      json: () => ({
+        receiptId: '10000000-0000-4000-8000-000000000001',
+        url: 'https://evil.test/steal',
+        body: 'Player name and payment details',
+      }),
+    },
+    waitUntil,
+  });
+  await waitUntil.mock.calls[0][0];
+  const [title, options] = h.showNotification.mock.calls[0];
+  expect(title).toBe('New dues receipt');
+  expect(options.body).not.toContain('Player name');
+  expect(options.data.url).toBe('https://pitch.test/management/dues');
+  expect(options.tag).toBe('receipt-10000000-0000-4000-8000-000000000001');
+  expect(h.cache.put).not.toHaveBeenCalled();
+});
+
+it('receipt notification taps open the correct month and focus an existing app window', async () => {
+  const h = harness();
+  const waitUntil = vi.fn();
+  const focus = vi.fn().mockResolvedValue(undefined);
+  const navigate = vi.fn().mockResolvedValue({ focus });
+  h.clients.matchAll.mockResolvedValue([{ url: 'https://pitch.test/account', navigate }]);
+  const close = vi.fn();
+  h.listeners.notificationclick({
+    notification: { close, data: { url: '/management/dues?month=2026-10' } },
+    waitUntil,
+  });
+  await waitUntil.mock.calls[0][0];
+  expect(close).toHaveBeenCalled();
+  expect(navigate).toHaveBeenCalledWith('https://pitch.test/management/dues?month=2026-10');
+  expect(focus).toHaveBeenCalled();
+  expect(h.clients.openWindow).not.toHaveBeenCalled();
+});
+
+it('malformed pushes still display a notification and clicks without an open app stay on the trusted route', async () => {
+  const h = harness();
+  const waitUntil = vi.fn();
+  h.listeners.push({
+    data: {
+      json: () => {
+        throw new Error('bad payload');
+      },
+    },
+    waitUntil,
+  });
+  await waitUntil.mock.calls[0][0];
+  expect(h.showNotification).toHaveBeenCalled();
+  h.listeners.notificationclick({
+    notification: { close: vi.fn(), data: { url: '/api/v1/receipts/secret/file' } },
+    waitUntil,
+  });
+  await waitUntil.mock.calls[1][0];
+  expect(h.clients.openWindow).toHaveBeenCalledWith('https://pitch.test/management/dues');
 });

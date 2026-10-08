@@ -1,3 +1,5 @@
+import { encrypt } from '../../src/infrastructure/secrets.js';
+import { schemas } from '@pitchpresence/shared';
 import { seedTeam, bankProviders } from '../fixtures/team.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -22,6 +24,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('multi-connection PostgreSQL con
       DATABASE_URL: process.env.TEST_DATABASE_URL,
       SESSION_SECRET: 'concurrency-session-secret-0000000000000',
       QR_SIGNING_SECRET: 'concurrency-qr-secret-0000000000000000000',
+      PAYMENT_MODE: 'PAYSTACK',
       LOG_LEVEL: 'silent',
     });
     backend = await buildApp(config, { db: fixture.db });
@@ -125,6 +128,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('multi-connection PostgreSQL con
       DATABASE_URL: process.env.TEST_DATABASE_URL,
       SESSION_SECRET: 'concurrency-payment-session-000000000000',
       QR_SIGNING_SECRET: 'concurrency-payment-qr-00000000000000000',
+      PAYMENT_MODE: 'PAYSTACK',
       LOG_LEVEL: 'silent',
     });
     let reference = '';
@@ -167,5 +171,66 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('multi-connection PostgreSQL con
     });
     expect(dues.status).toBe('PAID');
     expect(dues.qualifyingPaymentId).toBe(payment.id);
+  });
+  it('serializes different receipt uploads and concurrent staff confirmations without duplicate settlement', async () => {
+    const fresh = await fixture.db.user.create({
+      data: {
+        teamId: manager.teamId!,
+        name: 'Fresh player',
+        email: `${randomUUID()}@test.com`,
+        pinHash: player.pinHash,
+        isVerified: true,
+        active: true,
+        activatedAt: new Date(),
+      },
+    });
+    const account = await fixture.db.teamTransferAccount.create({
+      data: {
+        teamId: manager.teamId!,
+        configuredBy: manager.id,
+        bankName: 'Team Bank',
+        accountName: 'Team',
+        encryptedNumber: encrypt('concurrency-session-secret-0000000000000', '1111111111'),
+        accountLast4: '1111',
+      },
+    });
+    await fixture.db.team.update({
+      where: { id: manager.teamId! },
+      data: { transferAccountId: account.id },
+    });
+    const dues = (await backend.services.dues.own(fresh)).items[0]!;
+    const upload = (suffix: string) =>
+      schemas.receiptUpload.parse({
+        amount: 15000,
+        accountId: account.id,
+        fileName: 'receipt.pdf',
+        mimeType: 'application/pdf',
+        content: Buffer.from(`%PDF-1.7\n% ${suffix}\n%%EOF\n`).toString('base64'),
+      });
+    const submissions = await Promise.allSettled([
+      backend.services.receipts.upload(fresh, dues.id, upload('first'), 'a'),
+      backend.services.receipts.upload(fresh, dues.id, upload('second'), 'b'),
+    ]);
+    expect(submissions.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const receipt = await fixture.db.paymentReceipt.findFirstOrThrow({
+      where: { monthlyDuesId: dues.id },
+    });
+    const results = await Promise.allSettled([
+      backend.services.receipts.review(manager, receipt.id, { decision: 'APPROVE' }, 'review-a'),
+      backend.services.receipts.review(manager, receipt.id, { decision: 'APPROVE' }, 'review-b'),
+      backend.services.dues.markPaid(dues.id, 15000, manager.id, 'direct-confirmation'),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
+    expect(
+      await fixture.db.payment.count({ where: { monthlyDuesId: dues.id, status: 'SUCCESS' } }),
+    ).toBe(1);
+    expect(
+      await fixture.db.auditEvent.count({
+        where: { entityId: receipt.id, action: 'PAYMENT_PROOF_APPROVED' },
+      }),
+    ).toBe(1);
+    expect(
+      (await fixture.db.monthlyDues.findUniqueOrThrow({ where: { id: dues.id } })).status,
+    ).toBe('PAID');
   });
 });

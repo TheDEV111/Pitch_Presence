@@ -108,6 +108,19 @@ export function teamRoutes(r: Router, service: TeamService) {
   r.add('POST', '/api/v1/management/bank', schemas.bankSetup, (i, c) =>
     service.setup(c.user, i, c.request.id),
   );
+  r.add('POST', '/api/v1/management/transfer-account/request', schemas.transferChange, (i, c) =>
+    service.transfers.request(c.user, i, c.request.id),
+  );
+  r.add('POST', '/api/v1/management/transfer-account/confirm', schemas.transferConfirm, (i, c) =>
+    service.transfers.confirm(c.user, i, c.request.id),
+  );
+  r.add(
+    'GET',
+    '/api/v1/me/transfer-account',
+    empty,
+    async (_, c) => ({ account: await service.transfers.current(c.teamId) }),
+    { access: 'PLAYER' },
+  );
   r.add('POST', '/api/v1/management/bank/reconcile', empty, (_, c) =>
     service.reconcile(c.user, c.request.id),
   );
