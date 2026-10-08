@@ -24,67 +24,81 @@ HTTP-only cookies. Installed-app/browser session sharing must be tested per devi
 
 ## Finish photography, fonts and the film
 
-Requires a network-enabled machine, Node 22, FFmpeg/FFprobe with libx264, Chromium
-and Python FontTools with WOFF2 support. No provider API keys or paid video service
-are needed. `.media-source` and `.media-work` are ignored; only licensed derivatives,
+Rendering requires a network-enabled machine, Node 22, FFmpeg/FFprobe with libx264
+and Python FontTools with WOFF2 support. Chromium is required for browser tests.
+The film uses the same licensed warm-up and coaching masters as the original
+GitHub export. No AI provider or API key is required. See the
+[clean-film recipe](hero-film-brief.md) for its sequence and source details.
+`.media-source` and `.media-work` are ignored; only licensed derivatives,
 font licence files and the asset register belong in the repository.
 
 ```sh
 npm ci
 python3 -m pip install 'fonttools[woff]==4.63.0'
-npx playwright install chromium
 npm run media:icons
 npm run media:sync
-NEXT_PUBLIC_LOCAL_FONTS=true npm run build
-NEXT_PUBLIC_LOCAL_FONTS=true npm run start -w @pitchpresence/web
-```
-
-With that preview running, in another terminal:
-
-```sh
 npm run media:video
 npm run media:verify
+npm run build -w @pitchpresence/shared
+REQUIRE_LOCAL_MEDIA=true NEXT_PUBLIC_LOCAL_FONTS=true npm run build -w @pitchpresence/web
 ```
 
-Video masters download directly from the official MP4 CDN URLs in the asset register,
-without scraping Pexels HTML pages. If a CDN download fails, download the licensed files from the
-source pages recorded in `apps/web/public/media/manifest.json` into
-`.media-source/warmup.mp4` and `.media-source/coaching.mp4`, then retry. Photography
-masters can similarly be supplied as `training.jpg` and `coach.jpg`. Sources must
-meet the verified dimensions/duration. Existing master checksums protect against
-silent source changes; review the licence/source before intentionally updating them.
+The film renderer does not need a running app or browser capture.
 
-Alternatively run **Actions → Prepare release media → Run workflow**. Download the
-`pitchpresence-release-media` artifact and copy its media/fonts/icons folders into
-the corresponding `apps/web/public` folders. Review the footage, crops and overlays,
-then commit the derivatives and updated register. The workflow does not publish or
-push assets. A blocked stock download fails explicitly rather than substituting
-unrelated footage. The local environment could not download masters or execute
-Chromium, so media generation and visual acceptance must finish on that runner.
+The renderer downloads the original Pexels video masters from the recorded MP4
+CDN URLs in `apps/web/public/media/manifest.json`. It no longer requires an
+`arrival.mp4` file, AI generation, caption fonts or product-screen screenshots.
+If automated source access fails, download the registered source clips into
+`.media-source/warmup.mp4` and `.media-source/coaching.mp4`, then retry.
+Photography masters can similarly be supplied as `training.jpg` and `coach.jpg`.
+Existing checksums protect against silent source changes.
+
+To regenerate through GitHub:
+
+1. Push the updated scripts and workflow to the repository.
+2. Open **Actions → Prepare release media → Run workflow**.
+3. Download `pitchpresence-release-media` from the successful run.
+4. Extract the artifact outside the public folder, then copy its media/fonts/icons
+   folders into the corresponding `apps/web/public` folders, replacing old files.
+5. Review both MP4s and posters, then commit the derivatives and updated register.
+
+Do not put the artifact ZIP in the public folder. The workflow does not publish or
+push assets. A blocked stock download fails explicitly. Source download is blocked
+in this session, so replacement video generation must finish on a machine or
+runner with access to the masters and current FFmpeg/FFprobe.
 
 If film rendering fails, the log identifies the last media stage and a safe error
 summary. Download the `media-render-failure` artifact for the same stage/message in
 `render-failure.json`. It contains no raw browser or FFmpeg logs, source URLs or
-credentials. Missing input/font errors require rerunning `media:sync`; Chromium
-errors require installing the documented browser dependencies. The workflow stops
-before rendering if its preview server exits or fails to become ready. Browser
+credentials. Missing video footage requires supplying the registered warm-up and coaching masters. Missing photography
+or font files require rerunning `media:sync`. Chromium
+errors in the browser tests require installing the documented browser dependencies. Browser
 traces are uploaded only after a failed browser test that actually produced reports.
 
-The film uses the existing fictional demo components captured through Playwright;
-all API requests are intercepted and external browser requests blocked. Its four
-three-second scenes show warm-up, opened attendance, recorded arrival and monthly
-dues. Demo QR artwork is not scannable. Exports are silent H.264/yuv420p at 24fps:
-1920×1080 desktop (≤3MB), 720×900 mobile (≤1.5MB), with responsive WebP posters.
-Each scene is exactly 72 frames with a shared 24fps MP4 time base; the film is 288
-frames. Logs and failure reports include actual bytes, duration and frame counts.
+The film is a 15-second edit of the original real football footage. Five
+three-second segments show warm-up and coaching without any overlaid text,
+headline bands, phone diagrams, app panels or QR images. The product diagrams stay
+in the interactive walkthrough below. It uses distinct sections of the original
+masters rather than the proposed AI ball-to-team shot.
+Exports are silent H.264/yuv420p at 24fps: 1920×1080 desktop (≤3MB), 720×900 mobile
+(≤1.5MB), with responsive WebP posters. The film is exactly 360 frames with a
+24fps MP4 time base.
+Logs and failure reports include actual bytes, duration and frame counts.
 Oversized exports receive a two-pass encode with a bitrate derived from their
 size budget, reserving 15% for container overhead and bitrate variation. The size
 and timing checks still reject outputs that exceed their limits. The media workflow
-runs a synthetic mixed-frame-rate/overlay encoding test before capturing the film.
-FFmpeg uses fast-start MP4 delivery. Playback begins only after Play; pause/replay,
-visibility handling and text description accompany it. The interactive walkthrough
+runs a synthetic mixed-frame-rate encoding test before rendering the film.
+FFmpeg uses fast-start MP4 delivery. The film autoplays silently when at least 25%
+of its frame is visible and restarts when it re-enters after scrolling away. It plays
+once per entry, pauses offscreen or in a hidden tab, and provides a small pause/resume
+icon. Explicit pauses persist across scroll re-entry. Reduced-motion preferences
+keep a static poster and prevent automatic video requests. Autoplay policy rejection
+retains the poster and permits explicit resume. A text description sits below the
+video. The interactive walkthrough
 remains available. `film.json.ready` becomes true only after both exports finish;
 unrendered builds show a photograph instead of an empty video player.
+The previous MP4s contain baked-in phone overlays. Readiness is cleared until the
+clean football exports are generated and imported from the new workflow artifact.
 
 Photographs have responsive widths 320/640/960/1440/1920, ≤250KB through 640px and
 ≤500KB for larger sizes. Antonio/Inter WOFF2 subsets include Latin, punctuation and
@@ -116,7 +130,8 @@ On HTTPS staging, test real Android Chrome and iPhone/iPad Safari installation,
 standalone launch, native-camera QR links, slow connections, offline cold navigation,
 payment-return retry, and updating with two app windows open. Confirm caches contain
 only public assets. Test an API outage separately from browser-reported offline.
-Check mobile text legibility and no video request before Play. No deployed-device
+Check mobile text legibility, autoplay/scroll re-entry, persistent manual pause,
+and no automatic video request with reduced motion. No deployed-device
 acceptance has been performed by these changes.
 
 ## Worker rollback

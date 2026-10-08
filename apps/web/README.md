@@ -41,7 +41,7 @@ npm run media:sync
 NEXT_PUBLIC_LOCAL_MEDIA=true NEXT_PUBLIC_LOCAL_FONTS=true npm run build
 ```
 
-The script prepares local WebP derivatives at 320, 640, 960, 1440 and 1920px and subsetted Antonio/Inter WOFF2 fonts with OFL licences. Production uses local photography with a neutral fallback and omits external font stylesheets. The film renderer captures fictional demo panels and edits licensed footage into a 12-second hero film. Finished video binaries require the network-enabled media job; builds without them retain photography and the interactive walkthrough. See [PWA and media release instructions](../../docs/frontend/pwa-media.md) for tools, commands and the dedicated GitHub workflow.
+The script prepares local WebP derivatives at 320, 640, 960, 1440 and 1920px and subsetted Antonio/Inter WOFF2 fonts with OFL licences. Production uses local photography with a neutral fallback and omits external font stylesheets. The film renderer assembles a clean 15-second edit from the original licensed Pexels warm-up and coaching footage. It adds no text, headline bands or diagrams. See the [clean-film recipe](../../docs/frontend/hero-film-brief.md). Phone diagrams and app panels stay in the interactive walkthrough below. Replacement video binaries require the registered original masters and current FFmpeg/FFprobe; builds without them retain photography and the interactive walkthrough. See [PWA and media release instructions](../../docs/frontend/pwa-media.md) for tools, commands and the dedicated GitHub workflow.
 
 ## Verification and limitations
 

@@ -31,31 +31,9 @@ jobs:
       - name: Download and finish licensed photography and fonts
         run: npm run media:sync
       - run: npm run build -w @pitchpresence/shared
-      - run: npm run build -w @pitchpresence/web
-      - run: npx playwright install --with-deps chromium
-      - name: Render the twelve-second hero film
+      - name: Render the clean fifteen-second film from original football footage
         id: render-film
-        run: |
-          node node_modules/next/dist/bin/next start apps/web --hostname 127.0.0.1 > /tmp/pitchpresence-media-preview.log 2>&1 &
-          preview_pid=$!
-          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
-          preview_ready=false
-          for attempt in $(seq 1 60); do
-            if ! kill -0 "$preview_pid" 2>/dev/null; then
-              echo '::error::The media preview server exited before it was ready.'
-              exit 1
-            fi
-            if curl --silent --fail --max-time 2 http://127.0.0.1:3000/ > /dev/null; then
-              preview_ready=true
-              break
-            fi
-            sleep 1
-          done
-          if [ "$preview_ready" != true ]; then
-            echo '::error::The media preview server did not become ready. Film rendering was not started.'
-            exit 1
-          fi
-          npm run media:video
+        run: npm run media:video
       - name: Upload film failure diagnostics
         if: >-
           failure() && steps.render-film.outcome == 'failure' &&
@@ -74,6 +52,7 @@ jobs:
         run: npm run build -w @pitchpresence/web
       - name: Check browser artifacts for GitHub tokens
         run: npm run security:check:browser
+      - run: npx playwright install --with-deps chromium
       - name: Test PWA journeys and actual film playback
         id: browser-tests
         run: npm run test:web -- apps/web/e2e/pwa.spec.ts

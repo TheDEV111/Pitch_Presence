@@ -10,7 +10,35 @@
       "width": 5568,
       "height": 3712,
       "alt": "A coach organising football players during training on a green pitch.",
-      "focalPoint": "50% 50%"
+      "focalPoint": "50% 50%",
+      "masterSha256": "b0f0ac8710f9abff8b525bde1553d1d57cf092c7e9c4a2ead8d77205d9263806",
+      "outputs": [
+        {
+          "file": "training-320.webp",
+          "bytes": 11220,
+          "sha256": "5220d144d42e7f8fd0557af3c91929ebdb69f2d4ace0b0b74fed25f4d13fd47c"
+        },
+        {
+          "file": "training-640.webp",
+          "bytes": 32116,
+          "sha256": "9e719a2b4fc0b28cd433c257fb62c71e36db28a55fa05c0a93d3073510b3c95e"
+        },
+        {
+          "file": "training-960.webp",
+          "bytes": 57940,
+          "sha256": "dba06b407fc3e5cada72dec326d3798c8269b3c1a0f4607a3edf43d80330b9bd"
+        },
+        {
+          "file": "training-1440.webp",
+          "bytes": 109436,
+          "sha256": "4af54a833042cdd3427c3a4ce09f189b020ee5cd824da681de2639f987a29e84"
+        },
+        {
+          "file": "training-1920.webp",
+          "bytes": 177348,
+          "sha256": "ac1234be5bda157d9d88705d81cfb33da49b4a7650f28a0df6139e1863064690"
+        }
+      ]
     },
     {
       "name": "coach",
@@ -20,7 +48,35 @@
       "width": 3456,
       "height": 5184,
       "alt": "A football coach explaining a training strategy beside the pitch.",
-      "focalPoint": "50% 40%"
+      "focalPoint": "50% 40%",
+      "masterSha256": "cd0ccd311f90f3ae8d602ff765d5048e5aa85a4d1a5486395cf71c277ce2276b",
+      "outputs": [
+        {
+          "file": "coach-320.webp",
+          "bytes": 15040,
+          "sha256": "7730935595b02e4c00789afd1d6044487476473fed44f96c8344d9862e1500b9"
+        },
+        {
+          "file": "coach-640.webp",
+          "bytes": 39150,
+          "sha256": "3ed2915b080e541c143a8c3f89b466b09b970f74caa5fc70d041bfda3f9c0f64"
+        },
+        {
+          "file": "coach-960.webp",
+          "bytes": 69076,
+          "sha256": "e8d4da89b58df4e6b9907166fe6da268c024818318b0ca04cb5b8f75d61ffd97"
+        },
+        {
+          "file": "coach-1440.webp",
+          "bytes": 128442,
+          "sha256": "effea925128732b6edd2d494417e36cf215ffd6cfc32f125537137399c433a66"
+        },
+        {
+          "file": "coach-1920.webp",
+          "bytes": 207428,
+          "sha256": "91ca8526cc110835b615fb556eb6d63afe96cf5af398eb70267a45eab1c72786"
+        }
+      ]
     }
   ],
   "videos": [
@@ -32,7 +88,11 @@
       "master": "warmup.mp4",
       "trimStart": 0,
       "trimDuration": 3,
-      "download": "https://videos.pexels.com/video-files/7187051/7187051-hd_1920_1080_24fps.mp4"
+      "download": "https://videos.pexels.com/video-files/7187051/7187051-hd_1920_1080_24fps.mp4",
+      "masterSha256": "39cbb37b14fde9f4813df1a0f954b408cc9fa8c15936260c596452f60f14f484",
+      "width": 1280,
+      "height": 720,
+      "duration": 8.426667
     },
     {
       "name": "coaching",
@@ -42,7 +102,63 @@
       "master": "coaching.mp4",
       "trimStart": 0,
       "trimDuration": 3,
-      "download": "https://videos.pexels.com/video-files/8938113/8938113-uhd_3840_2160_25fps.mp4"
+      "download": "https://videos.pexels.com/video-files/8938113/8938113-uhd_3840_2160_25fps.mp4",
+      "masterSha256": "b47ec0de571cd25bed4ad963af565e359f0cfdbbf836c425d00c2c5095068c18",
+      "width": 3840,
+      "height": 2160,
+      "duration": 17.12
     }
-  ]
+  ],
+  "fonts": [
+    {
+      "name": "Antonio",
+      "license": "Antonio-OFL.txt",
+      "file": "Antonio.woff2",
+      "masterSha256": "9e95a2258ecdf3e45c72c5bbea1c4cd350e8f7bebc87c9dba53b29b1890b8903",
+      "sha256": "e0b56f0cce7d759e772fe209510eaf4e444c06ab89f4b94aa410be21a560580b",
+      "bytes": 29204
+    },
+    {
+      "name": "Inter",
+      "license": "Inter-OFL.txt",
+      "file": "Inter.woff2",
+      "masterSha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+      "sha256": "80cdef4ac58e8d65d9b1c51141ffb6de4bd3a45aab8c3242a244025b8c7dbc73",
+      "bytes": 150144
+    }
+  ],
+  "film": {
+    "duration": 12,
+    "outputs": [
+      {
+        "file": "hero-desktop.mp4",
+        "width": 1920,
+        "height": 1080,
+        "bytes": 2571553,
+        "sha256": "6b7ffe50843e1b2b1292af00561328958165c3a4753ee26f671ca9c6002741e7",
+        "duration": 12,
+        "fps": 24,
+        "codec": "h264",
+        "audio": false
+      },
+      {
+        "file": "hero-mobile.mp4",
+        "width": 720,
+        "height": 900,
+        "bytes": 1225019,
+        "sha256": "a5453ba346ebaaa21659bea3298dabb761f9605e887375498f232e5bf89d47c5",
+        "duration": 12,
+        "fps": 24,
+        "codec": "h264",
+        "audio": false
+      }
+    ],
+    "recipe": "scripts/render-hero-video.mjs",
+    "scenes": [
+      "MORE FOOTBALL.",
+      "OPEN TRAINING ATTENDANCE.",
+      "SCAN. ARRIVAL RECORDED.",
+      "LESS ADMIN."
+    ]
+  }
 }

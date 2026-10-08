@@ -154,27 +154,16 @@ test('installation help supports iPhone and hides in standalone mode', async ({ 
   await expect(page.getByRole('button', { name: 'Install PitchPresence' })).not.toBeVisible();
 });
 
-test('finished hero film loads only after play and pauses for user control', async ({ page }) => {
-  test.skip(
-    !film.ready,
-    'Actual video exports are required; run the media workflow before release.',
-  );
+test('hero film autoplays silently, restarts on scroll and retains manual pause', async ({
+  page,
+}) => {
+  test.skip(!film.ready, 'Actual video exports are required.');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
-  const videoRequests: string[] = [];
-  page.on('request', (request) => {
-    if (/hero-(desktop|mobile)\.mp4/.test(request.url())) videoRequests.push(request.url());
-  });
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Play film', exact: true })).toBeVisible();
+  const visual = page.locator('.film-visual');
   const video = page.getByLabel('PitchPresence training-day film');
-  await expect(video).not.toHaveAttribute('src');
-  const controls = await page.locator('.film-controls').boundingBox();
-  const description = await page.locator('.film-description').boundingBox();
-  expect(controls).not.toBeNull();
-  expect(description).not.toBeNull();
-  expect(description!.y).toBeGreaterThanOrEqual(controls!.y + controls!.height);
-  expect(videoRequests).toHaveLength(0);
-  await page.getByRole('button', { name: 'Play film', exact: true }).click();
+  await visual.scrollIntoViewIfNeeded();
   await expect
     .poll(() =>
       video.evaluate((element: HTMLVideoElement) => ({
@@ -183,40 +172,85 @@ test('finished hero film loads only after play and pauses for user control', asy
       })),
     )
     .toEqual({ paused: false, errorCode: null });
-  await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toBeVisible();
+  await expect(video).toHaveJSProperty('muted', true);
+  const mobile = await page.evaluate(() => matchMedia('(max-width: 767px)').matches);
+  await expect(video).toHaveAttribute('src', mobile ? film.mobile : film.desktop);
+  await expect(page.getByRole('button', { name: 'Play film', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Replay film', exact: true })).toHaveCount(0);
+  const control = page.getByRole('button', { name: 'Pause film', exact: true });
+  await expect(control).toBeVisible();
+  const controls = await control.boundingBox();
+  const description = await page.locator('.film-description').boundingBox();
+  expect(description!.y).toBeGreaterThanOrEqual(controls!.y + controls!.height);
   await expect
     .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime))
-    .toBeGreaterThan(0);
-  await expect(video).toHaveJSProperty('paused', false);
-  expect(videoRequests.length).toBeGreaterThan(0);
-  await page.getByRole('button', { name: 'Pause film', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Play film', exact: true })).toBeVisible();
+    .toBeGreaterThan(1);
+  await page.locator('.closing').scrollIntoViewIfNeeded();
   await expect(video).toHaveJSProperty('paused', true);
-  await page.getByRole('button', { name: 'Replay film', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toBeVisible();
+  const stoppedAt = await video.evaluate((element: HTMLVideoElement) => element.currentTime);
+  await visual.scrollIntoViewIfNeeded();
+  await expect(video).toHaveJSProperty('paused', false);
+  await expect
+    .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime))
+    .toBeLessThan(stoppedAt);
+  await control.click();
+  await expect(video).toHaveJSProperty('paused', true);
+  await page.locator('.closing').scrollIntoViewIfNeeded();
+  await visual.scrollIntoViewIfNeeded();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(video).toHaveJSProperty('paused', true);
+  await page.getByRole('button', { name: 'Resume film', exact: true }).click();
+  await expect(video).toHaveJSProperty('paused', false);
 });
 
-test('an interrupted film play remains retryable without the failure fallback', async ({
-  page,
-}) => {
+test('reduced motion keeps the hero poster without requesting the video', async ({ page }) => {
   test.skip(!film.ready, 'Actual video exports are required.');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (/hero-(desktop|mobile)\.mp4/.test(request.url())) requests.push(request.url());
+  });
+  await page.goto('/');
+  await page.locator('.film-visual').scrollIntoViewIfNeeded();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(page.getByLabel('PitchPresence training-day film')).not.toHaveAttribute('src');
+  expect(requests).toHaveLength(0);
+  await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toHaveCount(0);
+});
+
+test('blocked autoplay retains the poster and allows an explicit resume', async ({ page }) => {
+  test.skip(!film.ready, 'Actual video exports are required.');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 401, json: signedOut }));
   await page.addInitScript(() => {
     const original = HTMLMediaElement.prototype.play;
-    let interrupted = false;
+    let blocked = false;
     HTMLMediaElement.prototype.play = function () {
-      if (!interrupted) {
-        interrupted = true;
-        return Promise.reject(new DOMException('Playback interrupted by a pause.', 'AbortError'));
+      if (!blocked) {
+        blocked = true;
+        return Promise.reject(
+          new DOMException('Browser policy blocked autoplay.', 'NotAllowedError'),
+        );
       }
       return original.call(this);
     };
   });
   await page.goto('/');
-  const play = page.getByRole('button', { name: 'Play film', exact: true });
-  await play.click();
-  await expect(play).toBeEnabled();
+  await page.locator('.film-visual').scrollIntoViewIfNeeded();
+  const resume = page.getByRole('button', { name: 'Resume film', exact: true });
+  await expect(resume).toBeVisible();
   await expect(page.getByText('The film could not play.')).not.toBeVisible();
-  await play.click();
+  await resume.click();
   await expect(page.getByRole('button', { name: 'Pause film', exact: true })).toBeVisible();
 });

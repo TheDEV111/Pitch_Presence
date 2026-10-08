@@ -5,7 +5,7 @@ import { probe, run } from './media-tools.mjs';
 export const FPS = 24;
 export const SCENE_SECONDS = 3;
 export const SCENE_FRAMES = FPS * SCENE_SECONDS;
-export const FILM_SECONDS = 12;
+export const FILM_SECONDS = 15;
 export const FILM_FRAMES = FPS * FILM_SECONDS;
 export const VARIANTS = [
   {
@@ -19,13 +19,10 @@ export const VARIANTS = [
   { name: 'mobile', width: 720, height: 900, budget: 1500000, maxRate: '900k', buffer: '1800k' },
 ];
 
-// Still-image overlays must not promote the output to their default 25fps.
 // Use the same MP4 time base for every segment passed to the concat demuxer.
 export const NORMALISE_TIMING = 'fps=24,settb=1/24,setpts=N/(24*TB)';
-export function sceneFilter(base, footer, overlay) {
-  return overlay
-    ? `[0:v]${base}[base];[base][1:v]overlay=x=(W-w)/2:y=(H-h)/2+35,${footer},${NORMALISE_TIMING}[out]`
-    : `[0:v]${base},${footer},${NORMALISE_TIMING}[out]`;
+export function sceneFilter(base) {
+  return `[0:v]${base},${NORMALISE_TIMING}[out]`;
 }
 export function timingArgs(frames, { mp4 = true } = {}) {
   return [
@@ -80,7 +77,7 @@ export function assertFilmTiming(measured) {
     measured.frames !== FILM_FRAMES
   )
     throw new MediaAcceptanceError(
-      `Film timing failed: ${measured.durationSeconds ?? 'unknown'}s, ${measured.fps ?? 'unknown'}fps, ${measured.frames ?? 'unknown'} frames; expected 12s, 24fps, 288 frames.`,
+      `Film timing failed: ${measured.durationSeconds ?? 'unknown'}s, ${measured.fps ?? 'unknown'}fps, ${measured.frames ?? 'unknown'} frames; expected ${FILM_SECONDS}s, ${FPS}fps, ${FILM_FRAMES} frames.`,
       { ...measured, expectedSeconds: FILM_SECONDS, expectedFrames: FILM_FRAMES },
     );
 }
@@ -123,7 +120,7 @@ export async function finishFilm(
     bytes = await readOutput(output);
     const measured = measurements(info, bytes.length);
     log(
-      `Film ${variant.name}: ${measured.bytes} bytes (limit ${variant.budget}), ${measured.durationSeconds ?? 'unknown'}s (target 12), ${measured.fps ?? 'unknown'}fps, ${measured.frames ?? 'unknown'} frames.`,
+      `Film ${variant.name}: ${measured.bytes} bytes (limit ${variant.budget}), ${measured.durationSeconds ?? 'unknown'}s (target ${FILM_SECONDS}), ${measured.fps ?? 'unknown'}fps, ${measured.frames ?? 'unknown'} frames.`,
     );
     await step(`Validating ${variant.name} export timing`, async () => assertFilmTiming(measured));
     return measured;

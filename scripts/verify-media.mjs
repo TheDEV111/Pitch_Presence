@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { publicFolder, probe, digest } from './media-tools.mjs';
+import { FILM_SECONDS } from './hero-video-encoding.mjs';
 
 async function main() {
   const icons = [
@@ -51,6 +52,10 @@ async function main() {
   }
   const film = JSON.parse(await readFile(join(folder, 'film.json'), 'utf8'));
   if (!film.ready) throw new Error('Film has not been rendered.');
+  if (register.film?.composition !== 'original-football-footage-clean')
+    throw new Error('Film has not been rebuilt from the clean football recipe.');
+  if (film.duration !== FILM_SECONDS || register.film?.duration !== FILM_SECONDS)
+    throw new Error('Film duration metadata does not match the current recipe.');
   for (const [variant, width, height, budget] of [
     ['desktop', 1920, 1080, 3000000],
     ['mobile', 720, 900, 1500000],
@@ -84,7 +89,7 @@ async function main() {
       recorded?.audio !== false ||
       info.streams.some((stream) => stream.codec_type === 'audio') ||
       !Number.isFinite(Number(info.format.duration)) ||
-      Math.abs(Number(info.format.duration) - 12) > 0.15 ||
+      Math.abs(Number(info.format.duration) - FILM_SECONDS) > 0.15 ||
       bytes.length > budget ||
       recorded?.sha256 !== digest(bytes)
     )

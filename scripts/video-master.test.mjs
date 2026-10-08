@@ -76,3 +76,38 @@ it('rejects invalid duration or undersized footage before recording its checksum
     expect(f.asset.masterSha256).toBeUndefined();
   }
 });
+
+it('uses a supplied master with recorded rights and checksum without downloading it', async () => {
+  const f = await fixture();
+  Object.assign(f.asset, {
+    delivery: 'local',
+    source: 'Original team training footage',
+    creator: 'Team videographer',
+    license: 'Owned footage cleared for the product website',
+    masterSha256: digest('local bytes'),
+  });
+  delete f.asset.download;
+  const path = join(f.folder, f.asset.master);
+  await writeFile(path, 'local bytes');
+  await expect(loadVideoMaster(f.asset, f)).resolves.toBe(path);
+  expect(f.downloadMaster).not.toHaveBeenCalled();
+  await writeFile(path, 'different footage');
+  await expect(loadVideoMaster(f.asset, f)).rejects.toThrow('Video master changed');
+});
+
+it('rejects missing supplied footage or unrecorded usage rights without network fallback', async () => {
+  const f = await fixture();
+  f.asset.delivery = 'local';
+  await expect(loadVideoMaster(f.asset, f)).rejects.toThrow(
+    'checksum, creator, source and usage rights',
+  );
+  Object.assign(f.asset, {
+    source: 'Original footage',
+    creator: 'Team videographer',
+    license: 'Owned footage',
+    masterSha256: digest('local bytes'),
+  });
+  await expect(loadVideoMaster(f.asset, f)).rejects.toThrow('arrival master is missing');
+  expect(f.downloadMaster).not.toHaveBeenCalled();
+  expect(f.inspect).not.toHaveBeenCalled();
+});

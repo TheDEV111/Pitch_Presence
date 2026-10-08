@@ -20,7 +20,7 @@ afterEach(async () => {
     folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })),
   );
 });
-function info({ duration = '12', fps = '24/1', frames = '288', timeBase = '1/24000' } = {}) {
+function info({ duration = '15', fps = '24/1', frames = '360', timeBase = '1/24000' } = {}) {
   return {
     format: { duration },
     streams: [{ codec_type: 'video', avg_frame_rate: fps, nb_frames: frames, time_base: timeBase }],
@@ -63,7 +63,7 @@ it('recompresses an oversized film in two passes and inspects the replacement', 
   const compression = f.deps.execute.mock.calls[2][1];
   expect(analysis[analysis.indexOf('-pass') + 1]).toBe('1');
   expect(compression[compression.indexOf('-pass') + 1]).toBe('2');
-  expect(compression[compression.indexOf('-b:v') + 1]).toBe('1700000');
+  expect(compression[compression.indexOf('-b:v') + 1]).toBe('1360000');
   expect(compression[compression.indexOf('-passlogfile') + 1]).toBe('desktop-pass');
   expect(compression.at(-1)).toBe('film.mp4');
   expect(compression).not.toContain('-crf');
@@ -77,14 +77,14 @@ it('retains the size limit after compression and includes actual bytes in the fa
   const error = await finishFilm(f.options, f.deps).catch((error) => error);
   expect(failureReport(error)).toMatchObject({
     stage: 'Validating desktop export size',
-    measurements: { bytes: 3100000, bytesLimit: 3000000, durationSeconds: 12 },
+    measurements: { bytes: 3100000, bytesLimit: 3000000, durationSeconds: 15 },
   });
   expect(error.message).toContain('3100000 bytes');
 });
 
 it('rejects duration drift, wrong frame rates and incomplete exports before accepting them', async () => {
   for (const metadata of [
-    info({ duration: '12.48' }),
+    info({ duration: '15.48' }),
     info({ fps: '25/1' }),
     info({ frames: '280' }),
     info({ duration: 'N/A' }),
@@ -108,12 +108,12 @@ it('rejects segments whose clock would drift during stream-copy concatenation', 
 const ffmpegAvailable =
   spawnSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 3000 }).status === 0;
 it.skipIf(!ffmpegAvailable)(
-  'encodes mixed-rate footage and overlays into a twelve-second film within budget',
+  'encodes mixed-rate football footage into a fifteen-second film within budget',
   async () => {
     const folder = await mkdtemp(join(tmpdir(), 'pitch-film-'));
     folders.push(folder);
     const clips = [];
-    for (let scene = 0; scene < 4; scene++) {
+    for (let scene = 0; scene < 5; scene++) {
       const output = join(folder, `scene-${scene}.mp4`);
       const args = [
         '-y',
@@ -122,10 +122,9 @@ it.skipIf(!ffmpegAvailable)(
         '-i',
         `testsrc2=size=320x180:rate=${scene === 1 ? 25 : 24}`,
       ];
-      if (scene) args.push('-f', 'lavfi', '-i', 'color=c=white:size=60x80:rate=25');
       args.push(
         '-filter_complex',
-        sceneFilter('fps=24', 'null', Boolean(scene)),
+        sceneFilter('null'),
         '-map',
         '[out]',
         ...timingArgs(72),
@@ -163,8 +162,8 @@ it.skipIf(!ffmpegAvailable)(
       codec_name: 'h264',
       pix_fmt: 'yuv420p',
       avg_frame_rate: '24/1',
-      nb_frames: '288',
+      nb_frames: '360',
     });
-    expect(Number(result.info.format.duration)).toBeCloseTo(12, 2);
+    expect(Number(result.info.format.duration)).toBeCloseTo(15, 2);
   },
 );

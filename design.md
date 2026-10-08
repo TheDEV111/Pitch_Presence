@@ -200,7 +200,7 @@ Render the sequence from product-shaped interface components, keeping text as re
 
 Use an explicit Play walkthrough action; autoplay is off by default. Provide Play/Pause, Replay, and named Attendance/Dues chapter controls. The desktop stage can hold an app panel and phone preview; mobile shows one focused scene at a time. All chapter explanations remain readable when playback is stopped.
 
-An optional licensed 8–12-second training clip can occupy the hero image frame. It starts only after user activation, plays muted and inline, and has pause/replay controls. Supply a poster image and target a maximum 3MB clip with a 1080p desktop source and smaller mobile derivative. If no suitable footage is available, the photograph and component walkthrough satisfy the story without a blank video slot.
+A 15-second edit of the original licensed warm-up and coaching footage occupies the hero image frame. Five three-second segments show real football training. Keep the film free of all baked-in text, headline bands and diagrams; phone diagrams and app panels remain in the interactive walkthrough below. It autoplays muted and inline when at least 25% of the frame is visible, pauses offscreen or in a hidden tab, and restarts on scroll re-entry. Replace the Play/Replay CTAs with a small pause/resume icon; explicit pauses persist across scrolling. Reduced-motion preferences retain a static poster without automatically downloading the video. Keep the poster if browser policy blocks autoplay. Target a maximum 3MB clip with a 1080p desktop source and smaller mobile derivative. The photograph remains the fallback when the film is unavailable. The [film brief](docs/frontend/hero-film-brief.md) records the clean footage recipe and regeneration instructions.
 
 ### Motion rules
 
@@ -426,7 +426,7 @@ Target WCAG 2.2 AA. Ordinary text requires at least 4.5:1 contrast; large text a
 
 ## 10. Frontend Handoff and Backend Alignment
 
-The screens are implemented in `apps/web`, using browser-safe contracts and the same-origin API. Installation, safe offline navigation, local media delivery and the 12-second hero film follow the [PWA and media release instructions](docs/frontend/pwa-media.md). The interactive walkthrough remains the full product explanation; actual film exports require the media pipeline and visual review.
+The screens are implemented in `apps/web`, using browser-safe contracts and the same-origin API. Installation, safe offline navigation, local media delivery and the 15-second hero film follow the [PWA and media release instructions](docs/frontend/pwa-media.md). The interactive walkthrough remains the full product explanation; actual film exports require the media pipeline and visual review.
 
 | Capability                               | Existing contract / handoff requirement                                                                                                                                                                                                 |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
