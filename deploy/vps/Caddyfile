@@ -1,0 +1,14 @@
+{
+  email {$TLS_EMAIL}
+}
+
+{$API_DOMAIN} {
+  # API responses are private. No response cache or access-log body/query capture.
+  @api path /api/*
+  handle @api {
+    reverse_proxy api:4000
+  }
+  handle {
+    respond "Not found" 404
+  }
+}

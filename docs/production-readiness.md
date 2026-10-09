@@ -1,6 +1,6 @@
 # PitchPresence production readiness
 
-Reviewed against the working tree on 8 October 2026. This document records
+Reviewed against the working tree on 9 October 2026. This document records
 implemented features, remaining release gates and validation evidence.
 
 ## Implemented and available to test
@@ -17,7 +17,7 @@ implemented features, remaining release gates and validation evidence.
 | Data                | Prisma migrations and Supabase connection/setup instructions. User reported migration status up to date.                       | Recheck the intended deployment database, credentials, SSL, test/live separation and restore procedure.                        |
 
 The latest local backend build, lint, formatting and TypeScript checks passed.
-The full automated suite passed 148 tests and skipped six: five require a
+The full automated suite passed 158 tests and skipped six: five require a
 dedicated PostgreSQL test database and one requires current FFmpeg tooling.
 The guarded frontend build and asset checks also passed. Both imported MP4s
 decoded to 360 frames over 15 seconds. Browser execution was blocked by
@@ -46,6 +46,11 @@ this session cannot access the Docker socket. No image build has been verified h
 
 ## 2. Select hosts and keep the worker operational
 
+The selected backend host is now a friend's VPS; frontend remains on Vercel and
+PostgreSQL on Supabase. Follow the [VPS handoff](backend/vps-handoff.md) for private
+environment setup, API/worker supervision, HTTPS and acceptance. The VPS OS,
+available resources, existing reverse proxy and public domains still need confirmation.
+
 Public frontend/backend URLs have not been supplied in this session. Confirm any
 existing projects before creating new ones. The current deployment shape is:
 
@@ -61,8 +66,8 @@ the API with `node apps/api/dist/server.js` and the worker with
 restart and graceful shutdown for both. Do not expose a public unauthenticated
 endpoint that runs jobs.
 
-The budget remains free services. Hosting must therefore be agreed before
-implementing any worker runtime change:
+The budget remains free services using the supplied VPS. The following limits
+explain why sleeping alternatives were not selected:
 
 - **Render Free is a pilot option with availability limits.** Web services sleep
   after 15 minutes without inbound traffic and take about a minute to wake.
@@ -81,8 +86,8 @@ implementing any worker runtime change:
 
 An always-running host for both API and worker avoids the sleeping-worker issue.
 Moving processing to a serverless/event-driven host would be additional development
-and must preserve durable jobs, leases and prompt OTP delivery. Neither option has
-been selected or deployed by this review.
+and must preserve durable jobs, leases and prompt OTP delivery. The VPS is selected,
+but neither process has been deployed by this review.
 
 ## 3. Configure HTTPS and deployment environment
 
@@ -174,7 +179,7 @@ against a dedicated staging team. Tests must not rewrite real team/payment histo
 
 ## Next work
 
-First resolve hosting and worker execution, then deploy an HTTPS test environment
+Complete the VPS handoff and deploy an HTTPS test environment
 with manual payments enabled. Complete real-device, email and receipt-review
 acceptance there. Paystack approval and live settlement are deferred until online
 checkout is resumed.

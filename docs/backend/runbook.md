@@ -2,12 +2,16 @@
 
 ## Deploy and verify
 
+For the selected VPS backend, Vercel frontend and Supabase database, use the
+[VPS deployment handoff](vps-handoff.md). It includes both API and worker setup,
+an existing-proxy option, private environment files and manual-payment acceptance.
+
 1. Build the image from the committed lockfile. Set environment configuration and provider credentials in the deployment secret store.
 2. Run `npm run db:deploy` as a separate migration task against the intended database. Never use `db:push` or development migrations in production.
 3. Start the HTTP process (`node apps/api/dist/server.js`) and worker (`node apps/api/dist/worker.js`) from the same image. The deployment must restart a failed worker.
 4. Reverse proxy `/api/v1` to the API and other paths to the web application. Preserve Origin and Cookie headers; keep the API's port private. TLS terminates at the proxy. Do not log URI query values or request bodies.
 5. Check `/api/v1/health/live` and `/api/v1/health/ready`. Self-register a staff account, verify email, create a team and confirm password login.
-6. In staging, run the complete attendance flow and a Paystack test checkout, including a webhook and server-side verification. Confirm the same player/month state in both roles.
+6. In staging, run attendance and manual receipt submission/review. Confirm the same player/month state in both roles. Test Paystack checkout, webhook and server-side verification only when online payments are enabled again.
 
 `TRUST_PROXY` defaults to empty (disabled). IP rate limits therefore use the direct peer, which may be the reverse proxy. Set `TRUST_PROXY` to the proxy's explicit IPs/CIDRs before relying on per-client IP limiting; never trust arbitrary forwarding headers. Account-level limits still apply across instances.
 
@@ -40,7 +44,7 @@ A crashed worker's lease becomes available after 60 seconds. Claim tokens preven
 
 ## Backup and migration recovery
 
-Enable managed daily backups and point-in-time recovery. Rehearse restore into a separate database, deploy compatible application code, and run readiness plus a read-only integrity check of users, session participants, attendance and payment references. Verify the append-only audit trigger and partial unique indexes survived.
+Use managed daily backups and point-in-time recovery where the database plan supports them. On Supabase Free, arrange restricted exports separately. Rehearse restore into a separate database, deploy compatible application code, and run readiness plus a read-only integrity check of users, session participants, attendance and payment references. Verify the append-only audit trigger and partial unique indexes survived.
 
 Use expand/contract migrations for later schema changes. Roll back application code only if the deployed schema remains compatible; restore or forward-fix a migration instead of modifying already-applied migration files. First installation has no historical application data to migrate.
 

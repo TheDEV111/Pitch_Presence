@@ -12,7 +12,11 @@ const config = loadConfig({
   SESSION_SECRET: 'push-unit-session-secret-00000000000',
   QR_SIGNING_SECRET: 'push-unit-qr-secret-000000000000000',
   VAPID_PUBLIC_KEY: vapid.getPublicKey().toString('base64url'),
-  VAPID_PRIVATE_KEY: vapid.getPrivateKey().toString('base64url'),
+  // OpenSSL may omit a leading zero byte; VAPID requires a 32-byte scalar.
+  VAPID_PRIVATE_KEY: Buffer.from(
+    vapid.getPrivateKey().toString('hex').padStart(64, '0'),
+    'hex',
+  ).toString('base64url'),
   VAPID_SUBJECT: 'mailto:contact@example.com',
 });
 const client = createECDH('prime256v1');

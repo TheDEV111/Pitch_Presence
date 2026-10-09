@@ -21,7 +21,10 @@ const config = loadConfig({
   SESSION_SECRET: 'notification-test-session-secret-00000000',
   QR_SIGNING_SECRET: 'notification-test-qr-secret-000000000000',
   VAPID_PUBLIC_KEY: keys.getPublicKey().toString('base64url'),
-  VAPID_PRIVATE_KEY: keys.getPrivateKey().toString('base64url'),
+  VAPID_PRIVATE_KEY: Buffer.from(
+    keys.getPrivateKey().toString('hex').padStart(64, '0'),
+    'hex',
+  ).toString('base64url'),
   VAPID_SUBJECT: 'mailto:test@example.com',
   LOG_LEVEL: 'silent',
 });

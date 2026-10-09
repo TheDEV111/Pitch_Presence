@@ -1,0 +1,97 @@
+name: pitchpresence
+
+x-backend: &backend
+  image: pitchpresence-api:${IMAGE_TAG:?Set IMAGE_TAG to the deployment commit}
+  env_file:
+    - path: ${BACKEND_ENV_FILE:?Set an absolute path to the private backend environment file}
+      format: raw
+  environment:
+    NODE_ENV: production
+    PORT: '4000'
+    PAYMENT_MODE: MANUAL
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 45s
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [backend]
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+
+services:
+  api:
+    <<: *backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: '4000'
+      PAYMENT_MODE: MANUAL
+      TRUST_PROXY: ${PROXY_IPV4:-172.30.40.2}/32
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/api/v1/health/ready', { signal: AbortSignal.timeout(8000) }).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+  worker:
+    <<: *backend
+    command: [node, apps/api/dist/worker.js]
+
+  migrate:
+    <<: *backend
+    profiles: [ops]
+    restart: 'no'
+    command: [node, node_modules/prisma/build/index.js, migrate, deploy]
+
+  preflight:
+    <<: *backend
+    profiles: [ops]
+    restart: 'no'
+    command: [node, scripts/check-production-env.mjs]
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [edge]
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set the public API hostname}
+      TLS_EMAIL: ${TLS_EMAIL:?Set the TLS contact email}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      backend:
+        ipv4_address: ${PROXY_IPV4:-172.30.40.2}
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: ${BACKEND_SUBNET:-172.30.40.0/24}
+          gateway: ${BACKEND_GATEWAY:-172.30.40.1}
+
+volumes:
+  caddy_data:
+  caddy_config:

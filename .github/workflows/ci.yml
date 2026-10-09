@@ -75,3 +75,72 @@ jobs:
             test-results/
           retention-days: 7
           if-no-files-found: warn
+
+  vps-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pitchpresence
+          POSTGRES_PASSWORD: pitchpresence
+          POSTGRES_DB: pitchpresence_container_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U pitchpresence -d pitchpresence_container_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build the backend deployment image
+        run: docker build --tag pitchpresence-api:${GITHUB_SHA} .
+      - name: Prepare disposable environment and validate VPS Compose
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/pitchpresence-container.env" <<'ENV'
+          NODE_ENV=production
+          APP_URL=https://pitch.test
+          DATABASE_URL=postgresql://pitchpresence:pitchpresence@127.0.0.1:5432/pitchpresence_container_test?sslmode=require
+          SESSION_SECRET=container-test-session-secret-with-at-least-32-characters
+          DATA_ENCRYPTION_SECRET=container-test-data-secret-with-at-least-32-characters
+          QR_SIGNING_SECRET=container-test-qr-secret-with-at-least-32-characters
+          RESEND_API_KEY=re_container_test_fixture
+          EMAIL_FROM=PitchPresence <app@pitch.test>
+          PAYMENT_MODE=MANUAL
+          LOG_LEVEL=error
+          ENV
+          # CI PostgreSQL is local and has no TLS; only the runtime DB URL differs.
+          sed 's/sslmode=require/sslmode=disable/' "$RUNNER_TEMP/pitchpresence-container.env" > "$RUNNER_TEMP/pitchpresence-runtime.env"
+          chmod 600 "$RUNNER_TEMP/pitchpresence-container.env" "$RUNNER_TEMP/pitchpresence-runtime.env"
+          cat > .env.vps <<ENV
+          IMAGE_TAG=${GITHUB_SHA}
+          BACKEND_ENV_FILE=$RUNNER_TEMP/pitchpresence-container.env
+          API_DOMAIN=api.pitch.test
+          TLS_EMAIL=operator@pitch.test
+          ENV
+          docker compose --env-file .env.vps -f compose.vps.yaml --profile edge config --quiet
+          docker compose --env-file .env.vps -f compose.vps.yaml -f deploy/vps/compose.host-proxy.yaml config --quiet
+          docker run --rm --env-file "$RUNNER_TEMP/pitchpresence-container.env" pitchpresence-api:${GITHUB_SHA} node scripts/check-production-env.mjs
+      - name: Validate the HTTPS reverse proxy configuration
+        run: >-
+          docker run --rm
+          --env API_DOMAIN=api.pitch.test --env TLS_EMAIL=operator@pitch.test
+          --volume "$PWD/deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Apply migrations and smoke test both production processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="pitchpresence-api:${GITHUB_SHA}"
+          runtime_args=(--network host --env-file "$RUNNER_TEMP/pitchpresence-runtime.env" --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop ALL --security-opt no-new-privileges:true --init)
+          docker run --rm "${runtime_args[@]}" "$image" node node_modules/prisma/build/index.js migrate deploy
+          trap 'docker rm -f pitchpresence-api-smoke pitchpresence-worker-smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name pitchpresence-api-smoke "${runtime_args[@]}" "$image"
+          docker run -d --name pitchpresence-worker-smoke "${runtime_args[@]}" "$image" node apps/api/dist/worker.js
+          curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 2 http://127.0.0.1:4000/api/v1/health/ready
+          sleep 2
+          test "$(docker inspect --format '{{.State.Running}}' pitchpresence-worker-smoke)" = true
+          docker stop --time 45 pitchpresence-api-smoke pitchpresence-worker-smoke
+          test "$(docker inspect --format '{{.State.ExitCode}}' pitchpresence-api-smoke)" = 0
+          test "$(docker inspect --format '{{.State.ExitCode}}' pitchpresence-worker-smoke)" = 0

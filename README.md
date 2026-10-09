@@ -56,6 +56,7 @@ The test suite creates synthetic users and financial records; never point it at 
 
 ## Documentation
 
+- [VPS deployment handoff: API, worker, Vercel and Supabase](docs/backend/vps-handoff.md)
 - [Manual payments and receipt review](docs/backend/manual-payments.md)
 - [Device receipt alerts, dues search and player removal](docs/backend/receipt-notifications-roster.md)
 - [Production readiness and release steps](docs/production-readiness.md)
@@ -70,4 +71,4 @@ The test suite creates synthetic users and financial records; never point it at 
 - [Environment configuration](docs/backend/environment.md)
 - [Supabase PostgreSQL setup](docs/backend/supabase.md)
 
-The source PRD is `PitchPresence_V1_Detailed_PRD.pdf`. Production provider testing and deployment require your Resend and Paystack accounts.
+The source PRD is `PitchPresence_V1_Detailed_PRD.pdf`. Production email testing requires Resend; Paystack credentials are needed only when online checkout is enabled.

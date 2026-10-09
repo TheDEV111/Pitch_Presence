@@ -1,0 +1,7 @@
+# Use only when the VPS already has a host-managed HTTPS reverse proxy.
+# Paths and variables resolve against the first Compose file at the repository root.
+services:
+  api:
+    ports: ['127.0.0.1:4000:4000']
+    environment:
+      TRUST_PROXY: ${BACKEND_GATEWAY:-172.30.40.1}/32,127.0.0.1/32
