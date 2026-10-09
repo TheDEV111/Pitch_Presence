@@ -350,10 +350,15 @@ test('phone layouts and reduced motion do not download split-screen video', asyn
     [390, 'no-preference'],
     [834, 'reduce'],
   ] as const) {
-    await page.setViewportSize({ width, height: 1000 });
+    // Unmount the previous page before changing conditions. Resizing its phone
+    // layout to tablet width would legitimately load video before motion changes.
+    await page.goto('about:blank');
     await page.emulateMedia({ reducedMotion });
+    await page.setViewportSize({ width, height: 1000 });
     await page.goto('/sign-in');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    // Wait for client hydration/auth checking before asserting the absence of I/O.
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
     await page.evaluate(
       () =>
         new Promise<void>((resolve) =>

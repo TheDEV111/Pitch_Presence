@@ -321,6 +321,7 @@ export function Players() {
 }
 type Period = { month: string; minimumAmount: number; frozenAt: string | null };
 export function ManagementDues() {
+  const statusFilterId = useId();
   const [month, setMonth] = useState(currentMonth());
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -444,14 +445,20 @@ export function ManagementDues() {
                 if (/^\d{4}-\d{2}$/.test(e.target.value)) setMonth(e.target.value);
               }}
             />
-            <label className="field">
-              <span>Status</span>
-              <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <div className="field">
+              <label htmlFor={statusFilterId}>
+                <span>Status</span>
+              </label>
+              <select
+                id={statusFilterId}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
                 <option value="">All statuses</option>
                 <option value="PAID">Paid</option>
                 <option value="NOT_PAID">Not paid</option>
               </select>
-            </label>
+            </div>
           </div>
           <Feedback error={records.error} />
           {records.loading ? (

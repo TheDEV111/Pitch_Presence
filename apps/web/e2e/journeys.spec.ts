@@ -115,7 +115,7 @@ test('pending checkout is not shown as a paid month', async ({ page }) => {
   });
   await page.goto('/dues');
   await page.getByRole('button', { name: /October 2026/ }).click();
-  await page.getByLabel('Amount in naira').fill('5000');
+  await page.getByRole('textbox', { name: /^Checkout amount in naira\b/ }).fill('5000');
   await page.getByRole('button', { name: 'Continue to Paystack' }).click();
   await expect(page.getByRole('button', { name: 'Check payment status' })).toBeVisible();
   await expect(page.getByText('Payment pending', { exact: true })).toBeVisible();

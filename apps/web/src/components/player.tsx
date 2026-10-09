@@ -380,7 +380,7 @@ export function PlayerDues({ user }: { user: UserResponse }) {
                   'NOT_PAID' && (
                   <form className="form-stack" onSubmit={pay}>
                     <Field
-                      label="Amount in naira"
+                      label="Checkout amount in naira"
                       inputMode="decimal"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
