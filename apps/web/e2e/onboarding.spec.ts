@@ -211,6 +211,13 @@ test('an invited coach refreshes verification and resumes the saved invitation w
   await page.goto('/staff/join?invite=a-long-staff-invitation-token-123456');
   await expect(page).toHaveURL(/\/staff\/join$/);
   await signup(page, true);
+  // Clicking submits the request; wait for its response and saved recovery state before refreshing.
+  await expect(page.getByLabel('Six-digit email code')).toBeVisible();
+  const savedVerification = await page.evaluate(() =>
+    sessionStorage.getItem('pitchpresence:verification:MANAGER'),
+  );
+  expect(savedVerification).toContain(coach.email);
+  expect(savedVerification).not.toContain('a-long-staff-invitation-token-123456');
   await page.reload();
   await page.getByLabel('Six-digit email code').fill('012345');
   await page.getByRole('button', { name: 'Verify email', exact: true }).click();
