@@ -15,11 +15,17 @@ shared package before Next.js, and enables verified local media and fonts.
 `deploy/vercel/project-settings.json` supplies the project root and Node 22.
 
 The Install Command runs
-`npm ci --workspaces --include-workspace-root --include=dev`. npm resolves the
+`npm install --workspaces --include-workspace-root --include=dev --include=optional`. npm resolves the
 workspace root and its committed lockfile whether installation starts at the
 repository root or `apps/web`. Including the root and development dependencies
 provides the shared package's TypeScript compiler and the frontend build tools.
 The Build Command still starts from the project's `apps/web` directory.
+
+This uses `npm install` because the committed lockfile is missing Sharp platform
+packages that newer npm versions require for `npm ci`. Valid locked versions
+are retained, and missing optional packages can be resolved during Vercel's
+network-enabled installation. This does not repair the repository's committed
+lockfile; complete the repair below before switching deployment back to `npm ci`.
 
 The install wrapper in `vercel.json` captures npm's output in a temporary file.
 On success it prints the full install log; on failure it prints the first 60
@@ -99,11 +105,27 @@ Push the updated configuration before retrying the GitHub deployment.
 
 The tail of npm's usage text does not identify the failure. Read the first
 `npm error code` and the lines following it. If npm reports a missing lockfile,
-check the root directory and included source files. If it reports that the
-lockfile is out of sync, run `npm install` from the repository root in a
-network-enabled terminal, review the resulting lockfile change and commit it.
-Keep `npm ci` for reproducible deployments.
+check the root directory and included source files.
+
+For errors about missing `@img/sharp-*` packages, repair the lockfile in a
+network-enabled terminal with the newer npm version that exposes the problem:
+
+```bash
+npx --yes npm@11.18.0 install --package-lock-only --ignore-scripts --include=dev --include=optional
+npx --yes npm@11.18.0 ci --dry-run --ignore-scripts --include=dev --include=optional
+```
+
+Run from the repository root. The first command updates the lockfile without
+replacing installed dependencies or running lifecycle scripts. The second
+checks lockfile compatibility without removing `node_modules`. Review and
+commit the lockfile change. Do not delete the entire lockfile or regenerate it
+from scratch, which can also update unrelated transitive dependencies. An older
+npm version can pass validation while the newer version rejects missing optional
+entries; verify with the same npm version as deployment. After successful repair,
+`npm ci` can be restored for strict, reproducible installs.
 
 Reference: [Vercel CLI Git connection](https://vercel.com/docs/cli/git),
 [monorepo setup](https://vercel.com/docs/monorepos), and
 [authenticated CLI API requests](https://vercel.com/docs/cli/api).
+See also [Sharp's cross-platform installation guidance](https://sharp.pixelplumbing.com/install/)
+and [npm's lockfile behaviour](https://docs.npmjs.com/cli/commands/npm-install/).
