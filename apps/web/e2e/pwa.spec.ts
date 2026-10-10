@@ -328,10 +328,10 @@ test('desktop and tablet split screens play the training film with usable pause 
     await page.goto('/');
     const panel = page.locator('.management-photo');
     await panel.scrollIntoViewIfNeeded();
-    const video = panel.getByLabel('Football training film');
-    await expect(video).toHaveJSProperty('paused', false);
-    await expect(video).toHaveAttribute('src', film.mobile);
-    await expect(video).toHaveJSProperty('error', null);
+    const photo = panel.getByRole('img');
+    await expect(photo).toBeVisible();
+    await expect(photo).toHaveAttribute('src', /\/media\/training-\d+\.webp$/);
+    await expect(panel.locator('video')).toHaveCount(0);
     const descriptionIds = await page
       .locator('video')
       .evaluateAll((videos) => videos.map((video) => video.getAttribute('aria-describedby')));

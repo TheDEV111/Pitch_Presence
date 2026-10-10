@@ -253,7 +253,7 @@ export function Landing() {
         </section>
         <section className="management-story container">
           <div className="management-photo">
-            <HeroFilm presentation="split" />
+            <Photo kind="training" />
           </div>
           <div>
             <p className="eyebrow">04 / MADE FOR THE TOUCHLINE</p>
