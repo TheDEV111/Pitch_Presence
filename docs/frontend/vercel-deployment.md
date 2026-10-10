@@ -14,6 +14,13 @@ enabled for workspace packages and PWA/media scripts.
 shared package before Next.js, and enables verified local media and fonts.
 `deploy/vercel/project-settings.json` supplies the project root and Node 22.
 
+The Install Command is
+`npm ci --workspaces --include-workspace-root --include=dev`. npm resolves the
+workspace root and its committed lockfile whether installation starts at the
+repository root or `apps/web`. Including the root and development dependencies
+provides the shared package's TypeScript compiler and the frontend build tools.
+The Build Command still starts from the project's `apps/web` directory.
+
 `.vercelignore` excludes local environment files, Git metadata, credential
 directories and generated build outputs from CLI uploads. `.vercel/` is also
 ignored by Git. Never put backend secrets in Vercel environment variables.
@@ -75,6 +82,22 @@ backend origin or staging environment.
 Verify `/api/v1/health/ready` through the frontend, then test real sign-in,
 email delivery, receipts, attendance and installed PWA notifications using the
 [VPS acceptance checklist](../backend/vps-handoff.md).
+
+## Recover an install failure
+
+In Vercel's project settings, confirm Root Directory is `apps/web` and enable
+Include source files outside the Root Directory. The workspace packages,
+`package-lock.json`, root build tools and media scripts all require those files.
+Remove any stale Install Command override containing `cd ../..`, or replace it
+with the Install Command above. Push the updated configuration before retrying
+the GitHub deployment.
+
+The tail of npm's usage text does not identify the failure. Read the first
+`npm error code` and the lines following it. If npm reports a missing lockfile,
+check the root directory and included source files. If it reports that the
+lockfile is out of sync, run `npm install` from the repository root in a
+network-enabled terminal, review the resulting lockfile change and commit it.
+Keep `npm ci` for reproducible deployments.
 
 Reference: [Vercel CLI Git connection](https://vercel.com/docs/cli/git),
 [monorepo setup](https://vercel.com/docs/monorepos), and
