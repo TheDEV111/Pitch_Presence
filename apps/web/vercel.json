@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "installCommand": "npm ci --workspaces --include-workspace-root --include=dev",
+  "installCommand": "npm ci --workspaces --include-workspace-root --include=dev > /tmp/pitchpresence-vercel-install.log 2>&1 && cat /tmp/pitchpresence-vercel-install.log || { head -n 60 /tmp/pitchpresence-vercel-install.log; exit 1; }",
   "buildCommand": "cd ../.. && npm run build -w @pitchpresence/shared && NEXT_PUBLIC_LOCAL_MEDIA=true NEXT_PUBLIC_LOCAL_FONTS=true REQUIRE_LOCAL_MEDIA=true npm run build -w @pitchpresence/web"
 }

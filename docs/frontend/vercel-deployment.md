@@ -14,12 +14,17 @@ enabled for workspace packages and PWA/media scripts.
 shared package before Next.js, and enables verified local media and fonts.
 `deploy/vercel/project-settings.json` supplies the project root and Node 22.
 
-The Install Command is
+The Install Command runs
 `npm ci --workspaces --include-workspace-root --include=dev`. npm resolves the
 workspace root and its committed lockfile whether installation starts at the
 repository root or `apps/web`. Including the root and development dependencies
 provides the shared package's TypeScript compiler and the frontend build tools.
 The Build Command still starts from the project's `apps/web` directory.
+
+The install wrapper in `vercel.json` captures npm's output in a temporary file.
+On success it prints the full install log; on failure it prints the first 60
+lines and preserves a failing exit status. This keeps the actual npm error at
+the end of Vercel's build output instead of its lengthy usage help.
 
 `.vercelignore` excludes local environment files, Git metadata, credential
 directories and generated build outputs from CLI uploads. `.vercel/` is also
@@ -88,9 +93,9 @@ email delivery, receipts, attendance and installed PWA notifications using the
 In Vercel's project settings, confirm Root Directory is `apps/web` and enable
 Include source files outside the Root Directory. The workspace packages,
 `package-lock.json`, root build tools and media scripts all require those files.
-Remove any stale Install Command override containing `cd ../..`, or replace it
-with the Install Command above. Push the updated configuration before retrying
-the GitHub deployment.
+Remove any stale Install Command override, or replace it with the exact
+`installCommand` from `apps/web/vercel.json`, including its logging wrapper.
+Push the updated configuration before retrying the GitHub deployment.
 
 The tail of npm's usage text does not identify the failure. Read the first
 `npm error code` and the lines following it. If npm reports a missing lockfile,
