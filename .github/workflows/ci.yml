@@ -95,7 +95,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Build the backend deployment image
         run: docker build --tag pitchpresence-api:${GITHUB_SHA} .
-      - name: Prepare disposable environment and validate VPS Compose
+      - name: Prepare disposable environment and validate production Compose
         shell: bash
         run: |
           cat > "$RUNNER_TEMP/pitchpresence-container.env" <<'ENV'
@@ -113,21 +113,12 @@ jobs:
           # CI PostgreSQL is local and has no TLS; only the runtime DB URL differs.
           sed 's/sslmode=require/sslmode=disable/' "$RUNNER_TEMP/pitchpresence-container.env" > "$RUNNER_TEMP/pitchpresence-runtime.env"
           chmod 600 "$RUNNER_TEMP/pitchpresence-container.env" "$RUNNER_TEMP/pitchpresence-runtime.env"
-          cat > .env.vps <<ENV
-          IMAGE_TAG=${GITHUB_SHA}
-          BACKEND_ENV_FILE=$RUNNER_TEMP/pitchpresence-container.env
-          API_DOMAIN=api.pitch.test
-          TLS_EMAIL=operator@pitch.test
-          ENV
-          docker compose --env-file .env.vps -f compose.vps.yaml --profile edge config --quiet
-          docker compose --env-file .env.vps -f compose.vps.yaml -f deploy/vps/compose.host-proxy.yaml config --quiet
+          # docker-compose.prod.yml reads .env via env_file; validate it renders with the disposable values.
+          cp "$RUNNER_TEMP/pitchpresence-container.env" .env
+          echo "DB_PASSWORD=ci-only-password" >> .env
+          docker compose -f docker-compose.prod.yml config --quiet
+          rm -f .env
           docker run --rm --env-file "$RUNNER_TEMP/pitchpresence-container.env" pitchpresence-api:${GITHUB_SHA} node scripts/check-production-env.mjs
-      - name: Validate the HTTPS reverse proxy configuration
-        run: >-
-          docker run --rm
-          --env API_DOMAIN=api.pitch.test --env TLS_EMAIL=operator@pitch.test
-          --volume "$PWD/deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro"
-          caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - name: Apply migrations and smoke test both production processes
         shell: bash
         run: |
