@@ -6,6 +6,23 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "5"
 
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://${DB_USER:-pitchpresence}:${DB_PASSWORD:-pitchpresence}@database:5432/${DB_NAME:-pitchpresence}
+  APP_URL: ${APP_URL:?APP_URL is required}
+  SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+  DATA_ENCRYPTION_SECRET: ${DATA_ENCRYPTION_SECRET:?DATA_ENCRYPTION_SECRET is required}
+  QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:?QR_SIGNING_SECRET is required}
+  RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
+  EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM is required}
+  PAYMENT_MODE: ${PAYMENT_MODE:-MANUAL}
+  PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+  TRUST_PROXY: ${TRUST_PROXY:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
 services:
   database:
     image: postgres:16-alpine
@@ -29,16 +46,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      network: host
     image: ${IMAGE_REGISTRY:-pitchpresence}/api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     logging: *default-logging
-    env_file:
-      - .env
     environment:
-      NODE_ENV: production
+      <<: *app-env
       PORT: 4000
-      DATABASE_URL: postgresql://${DB_USER:-pitchpresence}:${DB_PASSWORD:-pitchpresence}@database:5432/${DB_NAME:-pitchpresence}
     depends_on:
       database:
         condition: service_healthy
@@ -52,16 +65,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      network: host
     image: ${IMAGE_REGISTRY:-pitchpresence}/worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     logging: *default-logging
     command: ["node", "apps/api/dist/worker.js"]
-    env_file:
-      - .env
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-pitchpresence}:${DB_PASSWORD:-pitchpresence}@database:5432/${DB_NAME:-pitchpresence}
+      <<: *app-env
     depends_on:
       database:
         condition: service_healthy

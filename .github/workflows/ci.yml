@@ -76,7 +76,7 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-  vps-image:
+  deploy-image:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -113,11 +113,8 @@ jobs:
           # CI PostgreSQL is local and has no TLS; only the runtime DB URL differs.
           sed 's/sslmode=require/sslmode=disable/' "$RUNNER_TEMP/pitchpresence-container.env" > "$RUNNER_TEMP/pitchpresence-runtime.env"
           chmod 600 "$RUNNER_TEMP/pitchpresence-container.env" "$RUNNER_TEMP/pitchpresence-runtime.env"
-          # docker-compose.prod.yml reads .env via env_file; validate it renders with the disposable values.
-          cp "$RUNNER_TEMP/pitchpresence-container.env" .env
-          echo "DB_PASSWORD=ci-only-password" >> .env
-          docker compose -f docker-compose.prod.yml config --quiet
-          rm -f .env
+          # Compose requires the app secrets at render time; reuse the disposable values.
+          docker compose --env-file "$RUNNER_TEMP/pitchpresence-container.env" -f docker-compose.prod.yml config --quiet
           docker run --rm --env-file "$RUNNER_TEMP/pitchpresence-container.env" pitchpresence-api:${GITHUB_SHA} node scripts/check-production-env.mjs
       - name: Apply migrations and smoke test both production processes
         shell: bash
