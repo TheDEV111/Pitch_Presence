@@ -1,0 +1,80 @@
+name: pitchpresence-prod
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${DB_USER:-pitchpresence}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-pitchpresence}
+      POSTGRES_DB: ${DB_NAME:-pitchpresence}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-pitchpresence}']
+      interval: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - default
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+    image: ${IMAGE_REGISTRY:-pitchpresence}/api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${DB_USER:-pitchpresence}:${DB_PASSWORD:-pitchpresence}@database:5432/${DB_NAME:-pitchpresence}
+    depends_on:
+      database:
+        condition: service_healthy
+    # Connects to both default (internal) and coolify (external proxy) networks.
+    # No host `ports:` publish, it is exposed internally and routed by Traefik.
+    networks:
+      - default
+      - coolify
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+    image: ${IMAGE_REGISTRY:-pitchpresence}/worker:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["node", "apps/api/dist/worker.js"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-pitchpresence}:${DB_PASSWORD:-pitchpresence}@database:5432/${DB_NAME:-pitchpresence}
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - default
+      - coolify
+
+
+
+networks:
+  default: {}
+  coolify:
+    external: true
+
+volumes:
+  postgres_data:
