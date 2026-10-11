@@ -1,6 +1,6 @@
 # Coolify deployment
 
-Production runs from `docker-compose.prod.yml` as a Docker Compose application on Coolify. PostgreSQL is hosted on Supabase.
+Production runs from `docker-compose.yaml` as a Docker Compose application on Coolify. PostgreSQL is hosted on Supabase.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ Set these in the Coolify application environment.
 
 ## Deploy
 
-1. Create a Docker Compose application in Coolify pointing at this repository and branch, compose file `docker-compose.prod.yml`.
+1. Create a Docker Compose application in Coolify pointing at this repository and branch, compose file `docker-compose.yaml`.
 2. Set the variables above.
 3. Assign the domain to the `api` service on port 4000.
 4. Deploy. Health check: `GET /api/v1/health/ready`.
@@ -36,7 +36,7 @@ Set these in the Coolify application environment.
 ## Validate locally
 
 ```bash
-docker compose --env-file <file with the required variables> -f docker-compose.prod.yml config --quiet
+docker compose --env-file <file with the required variables> -f docker-compose.yaml config --quiet
 ```
 
 CI runs the same check plus an image build, migration and smoke test of both processes.

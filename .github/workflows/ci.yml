@@ -114,7 +114,7 @@ jobs:
           sed 's/sslmode=require/sslmode=disable/' "$RUNNER_TEMP/pitchpresence-container.env" > "$RUNNER_TEMP/pitchpresence-runtime.env"
           chmod 600 "$RUNNER_TEMP/pitchpresence-container.env" "$RUNNER_TEMP/pitchpresence-runtime.env"
           # Compose requires the app secrets at render time; reuse the disposable values.
-          docker compose --env-file "$RUNNER_TEMP/pitchpresence-container.env" -f docker-compose.prod.yml config --quiet
+          docker compose --env-file "$RUNNER_TEMP/pitchpresence-container.env" -f docker-compose.yaml config --quiet
           docker run --rm --env-file "$RUNNER_TEMP/pitchpresence-container.env" pitchpresence-api:${GITHUB_SHA} node scripts/check-production-env.mjs
       - name: Apply migrations and smoke test both production processes
         shell: bash
