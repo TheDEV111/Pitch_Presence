@@ -2,9 +2,9 @@
 
 ## Deploy and verify
 
-For the selected VPS backend, Vercel frontend and Supabase database, use the
-[VPS deployment handoff](vps-handoff.md). It includes both API and worker setup,
-an existing-proxy option, private environment files and manual-payment acceptance.
+For the Coolify deployment of the API and worker, use
+[Coolify deployment](coolify-deploy.md). It covers environment variables,
+migrate-on-boot and Traefik routing.
 
 1. Build the image from the committed lockfile. Set environment configuration and provider credentials in the deployment secret store.
 2. Run `npm run db:deploy` as a separate migration task against the intended database. Never use `db:push` or development migrations in production.

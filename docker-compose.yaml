@@ -1,0 +1,64 @@
+name: pitchpresence-prod
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  APP_URL: ${APP_URL:?APP_URL is required}
+  SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+  DATA_ENCRYPTION_SECRET: ${DATA_ENCRYPTION_SECRET:?DATA_ENCRYPTION_SECRET is required}
+  QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:?QR_SIGNING_SECRET is required}
+  RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
+  EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM is required}
+  PAYMENT_MODE: ${PAYMENT_MODE:-MANUAL}
+  PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+  TRUST_PROXY: ${TRUST_PROXY:-}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${IMAGE_REGISTRY:-pitchpresence}/api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      <<: *app-env
+      PORT: 4000
+    # Connects to both default and coolify (external proxy) networks.
+    # No host `ports:` publish, it is exposed internally and routed by Traefik.
+    networks:
+      - default
+      - coolify
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${IMAGE_REGISTRY:-pitchpresence}/worker:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    command: ['node', 'apps/api/dist/worker.js']
+    # API healthy means its start script finished `prisma migrate deploy`.
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+    networks:
+      - default
+      - coolify
+
+networks:
+  default: {}
+  coolify:
+    external: true
