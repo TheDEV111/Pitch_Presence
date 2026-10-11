@@ -2,7 +2,7 @@
 
 ## Deploy and verify
 
-For the Coolify deployment of the API, worker and PostgreSQL, use
+For the Coolify deployment of the API and worker, use
 [Coolify deployment](coolify-deploy.md). It covers environment variables,
 migrate-on-boot and Traefik routing.
 

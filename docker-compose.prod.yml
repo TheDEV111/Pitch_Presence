@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 x-app-env: &app-env
   NODE_ENV: production
-  DATABASE_URL: postgresql://${DB_USER:-pitchpresence}:${DB_PASSWORD:-pitchpresence}@database:5432/${DB_NAME:-pitchpresence}
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
   APP_URL: ${APP_URL:?APP_URL is required}
   SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
   DATA_ENCRYPTION_SECRET: ${DATA_ENCRYPTION_SECRET:?DATA_ENCRYPTION_SECRET is required}
@@ -24,24 +24,6 @@ x-app-env: &app-env
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
 services:
-  database:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      POSTGRES_USER: ${DB_USER:-pitchpresence}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-pitchpresence}
-      POSTGRES_DB: ${DB_NAME:-pitchpresence}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-pitchpresence}']
-      interval: 10s
-      retries: 5
-      start_period: 30s
-    networks:
-      - default
-
   api:
     build:
       context: .
@@ -52,10 +34,7 @@ services:
     environment:
       <<: *app-env
       PORT: 4000
-    depends_on:
-      database:
-        condition: service_healthy
-    # Connects to both default (internal) and coolify (external proxy) networks.
+    # Connects to both default and coolify (external proxy) networks.
     # No host `ports:` publish, it is exposed internally and routed by Traefik.
     networks:
       - default
@@ -71,9 +50,6 @@ services:
     command: ["node", "apps/api/dist/worker.js"]
     environment:
       <<: *app-env
-    depends_on:
-      database:
-        condition: service_healthy
     networks:
       - default
       - coolify
@@ -84,6 +60,3 @@ networks:
   default: {}
   coolify:
     external: true
-
-volumes:
-  postgres_data:

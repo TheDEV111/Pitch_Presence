@@ -56,7 +56,7 @@ The test suite creates synthetic users and financial records; never point it at 
 
 ## Documentation
 
-- [Coolify deployment: API, worker and PostgreSQL](docs/backend/coolify-deploy.md)
+- [Coolify deployment: API and worker](docs/backend/coolify-deploy.md)
 - [Manual payments and receipt review](docs/backend/manual-payments.md)
 - [Device receipt alerts, dues search and player removal](docs/backend/receipt-notifications-roster.md)
 - [Production readiness and release steps](docs/production-readiness.md)

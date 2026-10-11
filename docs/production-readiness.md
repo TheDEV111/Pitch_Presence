@@ -46,7 +46,7 @@ this session cannot access the Docker socket. No image build has been verified h
 
 ## 2. Select hosts and keep the worker operational
 
-The backend runs on Coolify via Docker Compose (API, worker and PostgreSQL); the
+The backend runs on Coolify via Docker Compose (API and worker); the
 frontend remains on Vercel. Follow [Coolify deployment](backend/coolify-deploy.md) for
 environment setup and routing. Public domains still need confirmation.
 

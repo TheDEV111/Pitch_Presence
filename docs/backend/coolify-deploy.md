@@ -1,14 +1,13 @@
 # Coolify deployment
 
-Production runs from `docker-compose.prod.yml` as a Docker Compose application on Coolify.
+Production runs from `docker-compose.prod.yml` as a Docker Compose application on Coolify. PostgreSQL is hosted on Supabase.
 
 ## Architecture
 
-- `database`: PostgreSQL 16 on the default internal network only. No host ports.
 - `api`: runs `scripts/start-api.sh`, which executes `prisma migrate deploy` and then the API server.
 - `worker`: runs `apps/api/dist/worker.js`. It never migrates, so there is no migration race.
 - `api` and `worker` also join the external `coolify` network so Traefik can route to `api`.
-- `DATABASE_URL` is assembled in the compose file from `DB_USER`, `DB_PASSWORD` and `DB_NAME`.
+- `DATABASE_URL` is passed through from the Coolify environment. Use the Supabase session-mode pooler (port 5432) with `sslmode=require`; Prisma `migrate deploy` needs session mode or a direct connection.
 - Compose passes an explicit list of variables to the containers (`x-app-env`). Nothing else from the Coolify environment reaches the app, and required variables fail fast at render time.
 
 ## Environment variables
@@ -17,8 +16,7 @@ Set these in the Coolify application environment.
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `DB_PASSWORD` | yes in production | Defaults to `pitchpresence`, so always override. |
-| `DB_USER`, `DB_NAME` | no | Default `pitchpresence`. |
+| `DATABASE_URL` | yes | Supabase connection string, with `?sslmode=require`. |
 | `SESSION_SECRET`, `DATA_ENCRYPTION_SECRET`, `QR_SIGNING_SECRET` | yes | Independent random strings, 32+ characters each. |
 | `APP_URL` | yes | Public web origin, for example `https://pitchpresence.com`. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | yes | Transactional email. |
