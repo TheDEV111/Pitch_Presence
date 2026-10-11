@@ -48,6 +48,10 @@ services:
     restart: unless-stopped
     logging: *default-logging
     command: ["node", "apps/api/dist/worker.js"]
+    # API healthy means its start script finished `prisma migrate deploy`.
+    depends_on:
+      api:
+        condition: service_healthy
     environment:
       <<: *app-env
     networks:
