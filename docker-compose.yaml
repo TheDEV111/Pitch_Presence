@@ -3,8 +3,8 @@ name: pitchpresence-prod
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "10m"
-    max-file: "5"
+    max-size: '10m'
+    max-file: '5'
 
 x-app-env: &app-env
   NODE_ENV: production
@@ -47,7 +47,7 @@ services:
     image: ${IMAGE_REGISTRY:-pitchpresence}/worker:${IMAGE_TAG:-latest}
     restart: unless-stopped
     logging: *default-logging
-    command: ["node", "apps/api/dist/worker.js"]
+    command: ['node', 'apps/api/dist/worker.js']
     # API healthy means its start script finished `prisma migrate deploy`.
     depends_on:
       api:
@@ -57,8 +57,6 @@ services:
     networks:
       - default
       - coolify
-
-
 
 networks:
   default: {}
