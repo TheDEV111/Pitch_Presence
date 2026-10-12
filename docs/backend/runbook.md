@@ -17,7 +17,9 @@ migrate-on-boot and Traefik routing.
 
 ## Monitoring
 
-HTTP logs expose request ID, route, status and latency; credentials, cookies and query strings are redacted. Feed these into deployment monitoring for error rate and latency alerts.
+HTTP logs (`request completed`) expose request ID, client IP, route, status and latency; credentials, cookies and query strings are redacted. Feed these into deployment monitoring for error rate and latency alerts.
+
+Request IDs are UUIDs. A proxy may supply its own via `X-Request-Id` when it matches `[A-Za-z0-9._:-]{1,128}`; anything else is replaced. Every response echoes the ID in `X-Request-Id`, and error bodies include it as `requestId`, so a user-reported error can be traced to its log line and audit rows. If the logged `ip` is the proxy's address for every request, `TRUST_PROXY` is missing or wrong.
 
 Poll the authenticated `/management/operations` endpoint for this team’s pending payment count, oldest pending payment, payments requiring review and failed jobs. Global HTTP statistics remain in server logs and are not exposed to a team. Alert on jobs with failedAt, unresolved payments older than 24 hours, and sustained provider/HTTP errors. Audit events identify manual confirmations, reversals and payment reconciliation escalation.
 

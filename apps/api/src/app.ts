@@ -1,4 +1,5 @@
-import Fastify from 'fastify';
+import { randomUUID } from 'node:crypto';
+import Fastify, { type RawRequestDefaultExpression } from 'fastify';
 import { ReceiptService } from './modules/receipts/service.js';
 import { NotificationService } from './modules/notifications/service.js';
 import { notificationRoutes } from './modules/notifications/routes.js';
@@ -25,6 +26,12 @@ import { attendanceRoutes } from './modules/attendance/routes.js';
 import { duesRoutes } from './modules/dues/routes.js';
 import { paymentRoutes } from './modules/payments/routes.js';
 import { auditRoutes } from './modules/audit/routes.js';
+// Accept an upstream X-Request-Id only when it is short and log-safe; otherwise mint a UUID.
+const safeRequestId = /^[A-Za-z0-9._:-]{1,128}$/;
+export function genRequestId(req: RawRequestDefaultExpression) {
+  const upstream = req.headers['x-request-id'];
+  return typeof upstream === 'string' && safeRequestId.test(upstream) ? upstream : randomUUID();
+}
 export async function buildApp(
   config: Config,
   options: { db?: PrismaClient; providers?: Providers } = {},
@@ -33,6 +40,8 @@ export async function buildApp(
   const counters = { requests: 0, errors: 0, authenticationFailures: 0, totalLatencyMs: 0 };
   const app = Fastify({
     bodyLimit: 65_536,
+    requestIdHeader: false,
+    genReqId: genRequestId,
     trustProxy: config.TRUST_PROXY ? config.TRUST_PROXY.split(',').map((x) => x.trim()) : false,
     logger: {
       level: config.LOG_LEVEL,
@@ -67,8 +76,9 @@ export async function buildApp(
       done(new AppError(422, 'INVALID_JSON', 'Malformed JSON body.'));
     }
   });
-  app.addHook('onSend', async (_, reply) => {
+  app.addHook('onSend', async (request, reply) => {
     reply
+      .header('X-Request-Id', request.id)
       .header('Cache-Control', 'no-store')
       .header('X-Content-Type-Options', 'nosniff')
       .header('X-Frame-Options', 'DENY')
@@ -84,6 +94,7 @@ export async function buildApp(
     app.log.info(
       {
         requestId: request.id,
+        ip: request.ip,
         method: request.method,
         route: request.routeOptions.url,
         status: reply.statusCode,
