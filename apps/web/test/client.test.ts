@@ -87,3 +87,66 @@ describe('authenticated API client', () => {
     await expect(api('/auth/me')).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
+
+describe('rate-limit wait metadata', () => {
+  it.each([
+    { bodyWait: 60, headerWait: '120', expected: 60 },
+    { bodyWait: undefined, headerWait: '120', expected: 120 },
+    { bodyWait: undefined, headerWait: undefined, expected: undefined },
+    { bodyWait: -1, headerWait: 'invalid', expected: undefined },
+    { bodyWait: 0, headerWait: '30', expected: 30 },
+  ])(
+    'parses the body before the header and ignores invalid waits: $expected',
+    async ({ bodyWait, headerWait, expected }) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'RATE_LIMITED',
+                message: 'Too many attempts; try again later.',
+                requestId: 'limit-test',
+                ...(bodyWait !== undefined ? { retryAfterSeconds: bodyWait } : {}),
+              },
+            }),
+            { status: 429, headers: headerWait !== undefined ? { 'Retry-After': headerWait } : {} },
+          ),
+        ),
+      );
+      await expect(api('/auth/staff-register', { method: 'POST', body: {} })).rejects.toMatchObject(
+        {
+          status: 429,
+          code: 'RATE_LIMITED',
+          retryAfterSeconds: expected,
+        },
+      );
+    },
+  );
+});
+
+describe('team context protection', () => {
+  it('sends the selected membership and reports a workspace change without retrying', async () => {
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal('window', { dispatchEvent });
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: 'WORKSPACE_CHANGED', message: 'Reload your workspace.' },
+        }),
+        { status: 409 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetch);
+    setCsrfToken('csrf-test', 'membership-test');
+    await expect(api('/management/overview')).rejects.toMatchObject({ code: 'WORKSPACE_CHANGED' });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/management/overview',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-Membership-Id': 'membership-test' }),
+      }),
+    );
+    expect(dispatchEvent.mock.calls[0]![0].type).toBe('workspace-changed');
+  });
+});

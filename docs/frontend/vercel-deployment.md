@@ -92,7 +92,7 @@ backend origin or staging environment.
 
 Verify `/api/v1/health/ready` through the frontend, then test real sign-in,
 email delivery, receipts, attendance and installed PWA notifications using the
-[VPS acceptance checklist](../backend/vps-handoff.md).
+[production acceptance checklist](../production-acceptance.md).
 
 ## Recover an install failure
 

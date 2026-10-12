@@ -1,8 +1,11 @@
 import type { ApiError } from '@pitchpresence/shared';
 
 let csrfToken: string | null = null;
-export function setCsrfToken(token: string | null) {
+let membershipId: string | null = null;
+export function setCsrfToken(token: string | null, selectedMembership?: string) {
   csrfToken = token;
+  if (!token) membershipId = null;
+  else if (selectedMembership !== undefined) membershipId = selectedMembership;
 }
 export class RequestError extends Error {
   constructor(
@@ -10,6 +13,7 @@ export class RequestError extends Error {
     public code: string,
     message: string,
     public requestId?: string,
+    public retryAfterSeconds?: number,
   ) {
     super(message);
   }
@@ -30,6 +34,7 @@ export async function api<T>(
       signal: options.signal,
       headers: {
         ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(membershipId ? { 'X-Membership-Id': membershipId } : {}),
         ...(method !== 'GET' && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
         ...(options.key ? { 'Idempotency-Key': options.key } : {}),
       },
@@ -42,12 +47,22 @@ export async function api<T>(
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const failure = data as ApiError | null;
+    const headerWait = Number(response.headers.get('Retry-After'));
+    const wait = failure?.error?.retryAfterSeconds;
+    const retryAfterSeconds =
+      typeof wait === 'number' && Number.isFinite(wait) && wait > 0
+        ? Math.ceil(wait)
+        : Number.isFinite(headerWait) && headerWait > 0
+          ? Math.ceil(headerWait)
+          : undefined;
     const error = new RequestError(
       response.status,
       failure?.error?.code ?? 'UNAVAILABLE',
       failure?.error?.message ?? 'The service is unavailable. Please try again.',
       failure?.error?.requestId,
+      retryAfterSeconds,
     );
+    if (error.code === 'WORKSPACE_CHANGED') window.dispatchEvent(new Event('workspace-changed'));
     if (error.code === 'PLAYER_REMOVED' && path !== '/auth/device-login')
       window.dispatchEvent(new CustomEvent('player-removed', { detail: error.message }));
     if (

@@ -10,6 +10,7 @@ import { Button, Feedback, Loading, Logo } from './ui';
 import { PlayerHome, Attendance, PlayerDues, PaymentReturn, CheckIn } from './player';
 import { ManagementHome, Training, TrainingSession } from './training';
 import { InstalledLaunch, InstallApp } from './pwa';
+import { TeamSwitcher } from './team-switcher';
 import { Players, ManagementDues, Audit, Account } from './management';
 const playerNav = [
   { href: '/home', name: 'Home', icon: Home },
@@ -34,6 +35,7 @@ export function Application({ route }: { route: string }) {
       : '/sign-in',
   );
   const [expired, setExpired] = useState(false);
+  const [workspaceChanged, setWorkspaceChanged] = useState(false);
   const [removed, setRemoved] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
   const [returnTo, setReturnTo] = useState('/' + route);
@@ -51,7 +53,7 @@ export function Application({ route }: { route: string }) {
     setSession(session);
     setSignInPath(session.user.role === 'MANAGER' ? '/sign-in' : '/player/sign-in');
     setUser(session.user);
-    setCsrfToken(session.csrfToken);
+    setCsrfToken(session.csrfToken, session.user.id);
     setExpired(false);
   }
   async function load() {
@@ -79,6 +81,10 @@ export function Application({ route }: { route: string }) {
       setSession(null);
       setCsrfToken(null);
     };
+    const onWorkspaceChanged = () => {
+      setWorkspaceChanged(true);
+      setCsrfToken(null);
+    };
     const connection = () => setOnline(navigator.onLine);
     const onRemoved = (event: Event) => {
       setRemoved((event as CustomEvent<string>).detail);
@@ -87,11 +93,13 @@ export function Application({ route }: { route: string }) {
       setCsrfToken(null);
     };
     connection();
+    window.addEventListener('workspace-changed', onWorkspaceChanged);
     window.addEventListener('session-expired', onExpire);
     window.addEventListener('player-removed', onRemoved);
     window.addEventListener('online', connection);
     window.addEventListener('offline', connection);
     return () => {
+      window.removeEventListener('workspace-changed', onWorkspaceChanged);
       window.removeEventListener('session-expired', onExpire);
       window.removeEventListener('player-removed', onRemoved);
       window.removeEventListener('online', connection);
@@ -99,6 +107,15 @@ export function Application({ route }: { route: string }) {
     };
     // Each navigation mounts a fresh application; authentication is kept in memory only.
   }, []);
+  if (workspaceChanged)
+    return (
+      <main id="main" className="not-found">
+        <Logo />
+        <h1>Your selected team changed.</h1>
+        <p>Another tab switched teams. Reload before continuing.</p>
+        <Button onClick={() => location.reload()}>Reload workspace</Button>
+      </main>
+    );
   if (publicAuth) return <AuthPage mode={route} />;
   if (removed)
     return (
@@ -234,6 +251,7 @@ export function Application({ route }: { route: string }) {
       <div className="app-content">
         <header className="app-topbar">
           <span className="eyebrow">{session?.team?.name ?? 'PitchPresence'}</span>
+          {session && <TeamSwitcher session={session} />}
           {manager && (
             <Link href="/account#receipt-notifications-title" className="text-action">
               Receipt notifications

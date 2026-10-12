@@ -32,40 +32,84 @@ export class AuthService {
     private db: PrismaClient,
     private config: Config,
   ) {}
+  private async registrationLimits(email: string, ip: string, role: 'PLAYER' | 'MANAGER') {
+    await rateLimit(this.db, `register-v2:${role}:${ip}`, role === 'PLAYER' ? 120 : 30, 3600);
+    await rateLimit(
+      this.db,
+      `register-email:${keyedDigest(this.config.SESSION_SECRET, email.trim().toLowerCase())}`,
+      5,
+      900,
+    );
+  }
   async register(input: RegisterInput, ip: string) {
-    await rateLimit(this.db, `register:${ip}`, 10, 3600);
+    await this.registrationLimits(input.email, ip, 'PLAYER');
     const pinHash = await argon2.hash(input.pin, { type: argon2.argon2id });
-    await this.db.$transaction(async (tx) => {
-      const invitation = await tx.invitation.findUnique({
-        where: { tokenHash: digest(input.invitationToken) },
+    try {
+      await this.db.$transaction(async (tx) => {
+        const invitation = await tx.invitation.findUnique({
+          where: { tokenHash: digest(input.invitationToken) },
+        });
+        requireRule(invitation, 422, 'INVITATION_INVALID', 'The invitation is unavailable.');
+        await tx.$queryRaw`SELECT id FROM "Invitation" WHERE id=${invitation.id}::uuid FOR UPDATE`;
+        const current = await tx.invitation.findUniqueOrThrow({ where: { id: invitation.id } });
+        requireRule(
+          !current.revokedAt && current.kind === 'PLAYER' && current.expiresAt > new Date(),
+          422,
+          'INVITATION_INVALID',
+          'The invitation has expired or was revoked.',
+        );
+        requireRule(
+          !(await tx.account.findUnique({ where: { email: input.email } })),
+          409,
+          'ACCOUNT_EXISTS',
+          'This email already has an account. Sign in to accept this team invitation.',
+        );
+        const account = await tx.account.create({ data: { email: input.email, pinHash } });
+        const user = await tx.user.create({
+          data: {
+            accountId: account.id,
+            name: input.name,
+            email: input.email,
+            pinHash,
+            teamId: current.teamId,
+          },
+        });
+        await this.otpLimits(tx, user.email);
+        await this.queueOtp(tx, user, 'VERIFY_EMAIL');
+        return user;
       });
-      requireRule(invitation, 422, 'INVITATION_INVALID', 'The invitation is unavailable.');
-      await tx.$queryRaw`SELECT id FROM "Invitation" WHERE id=${invitation.id}::uuid FOR UPDATE`;
-      const current = await tx.invitation.findUniqueOrThrow({ where: { id: invitation.id } });
-      requireRule(
-        !current.revokedAt && current.kind === 'PLAYER' && current.expiresAt > new Date(),
-        422,
-        'INVITATION_INVALID',
-        'The invitation has expired or was revoked.',
-      );
-      const user = await tx.user.create({
-        data: { name: input.name, email: input.email, pinHash, teamId: current.teamId },
-      });
-      await this.otpLimits(tx, user.email);
-      await this.queueOtp(tx, user, 'VERIFY_EMAIL');
-      return user;
-    });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+        throw new AppError(
+          409,
+          'ACCOUNT_EXISTS',
+          'This email already has an account. Sign in to accept this team invitation.',
+        );
+      throw error;
+    }
     return { message: 'Check your email for a verification code.', resendAfterSeconds: 60 };
   }
   async staffRegister(
     input: { name: string; email: string; password: string; invitationToken?: string },
     ip: string,
   ) {
-    await rateLimit(this.db, `register:${ip}`, 10, 3600);
+    await this.registrationLimits(input.email, ip, 'MANAGER');
     const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
     try {
       return await this.db.$transaction(async (tx) => {
-        const existing = await tx.user.findUnique({ where: { email: input.email } });
+        const identity = await tx.account.findUnique({ where: { email: input.email } });
+        const existing = identity
+          ? await tx.user.findFirst({
+              where: { accountId: identity.id, role: 'MANAGER' },
+              orderBy: { createdAt: 'asc' },
+            })
+          : null;
+        requireRule(
+          !identity || existing,
+          409,
+          'ACCOUNT_EXISTS',
+          'This email already has an account. Sign in to accept the invitation.',
+        );
         if (existing) {
           await lock(tx, 'User', existing.id);
           const current = await tx.user.findUniqueOrThrow({ where: { id: existing.id } });
@@ -129,8 +173,10 @@ export class AuthService {
           );
           invitationId = invitation.id;
         }
+        const account = await tx.account.create({ data: { email: input.email, passwordHash } });
         const user = await tx.user.create({
           data: {
+            accountId: account.id,
             name: input.name,
             email: input.email,
             role: 'MANAGER',
@@ -152,7 +198,7 @@ export class AuthService {
       throw error;
     }
   }
-  async context(user: User) {
+  async context(user: User, authMethod = user.role === 'MANAGER' ? 'PASSWORD' : 'PIN') {
     const team = user.teamId
       ? await this.db.team.findUnique({
           where: { id: user.teamId },
@@ -175,8 +221,24 @@ export class AuthService {
               !invitation.revokedAt && !invitation.acceptedAt && invitation.expiresAt > new Date(),
           }
         : null;
+    const account = await this.db.account.findUniqueOrThrow({ where: { id: user.accountId } });
+    const memberships = await this.db.user.findMany({
+      where: { accountId: user.accountId, teamId: { not: null } },
+      include: { team: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
     return {
       user: publicUser(user),
+      authMethod,
+      hasPlayerPin: !!account.pinHash,
+      memberships: memberships.map((m) => ({
+        id: m.id,
+        teamId: m.teamId!,
+        teamName: m.team!.name,
+        role: m.role,
+        active: m.active,
+        removedAt: m.removedAt,
+      })),
       team,
       pendingInvitation,
       nextStep: user.teamId
@@ -186,15 +248,17 @@ export class AuthService {
           : ('CREATE_TEAM' as const),
     };
   }
-  async acceptInvitation(userId: string, token?: string) {
+  async acceptInvitation(userId: string, token?: string, authMethod?: string, pin?: string) {
     return this.db.$transaction(async (tx) => {
+      const initial = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      await lock(tx, 'Account', initial.accountId);
       await lock(tx, 'User', userId);
       const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
       requireRule(
-        user.role === 'MANAGER' && user.isVerified && user.active,
+        user.isVerified && user.active && !user.removedAt,
         403,
         'FORBIDDEN',
-        'A verified staff account is required.',
+        'A verified active account is required.',
       );
       const invitation = token
         ? await tx.invitation.findUnique({ where: { tokenHash: digest(token) } })
@@ -202,37 +266,113 @@ export class AuthService {
           ? await tx.invitation.findUnique({ where: { id: user.pendingInvitationId } })
           : null;
       requireRule(
-        invitation && invitation.kind === 'MANAGER' && invitation.email === user.email,
+        invitation && (invitation.kind === 'PLAYER' || invitation.email === user.email),
         422,
         'INVITATION_INVALID',
-        'This invitation does not match your staff account.',
+        'This invitation does not match your account.',
       );
       await tx.$queryRaw`SELECT id FROM "Invitation" WHERE id=${invitation.id}::uuid FOR UPDATE`;
       const current = await tx.invitation.findUniqueOrThrow({ where: { id: invitation.id } });
-      if (current.acceptedBy === userId && user.teamId === current.teamId) return publicUser(user);
+      const previous = await tx.user.findUnique({
+        where: { accountId_teamId: { accountId: user.accountId, teamId: current.teamId } },
+      });
+      if (
+        previous &&
+        current.kind === previous.role &&
+        !previous.removedAt &&
+        previous.active &&
+        (!current.acceptedAt || current.acceptedBy === previous.id) &&
+        !current.revokedAt &&
+        current.expiresAt > new Date()
+      )
+        return previous;
       requireRule(
-        !user.teamId,
+        !previous,
         409,
-        'TEAM_ALREADY_ASSIGNED',
-        'This account already belongs to a team.',
+        'MEMBERSHIP_EXISTS',
+        'This account already has a membership in this team. Contact the team manager.',
       );
       requireRule(
         !current.revokedAt && !current.acceptedAt && current.expiresAt > new Date(),
         422,
         'INVITATION_INVALID',
-        'Ask your team for a new staff invitation.',
+        'Ask your team for a new invitation.',
       );
-      const updated = await tx.user.update({
-        where: { id: userId },
-        data: { teamId: current.teamId, pendingInvitationId: null },
-      });
-      await tx.invitation.update({
-        where: { id: current.id },
-        data: { acceptedAt: new Date(), acceptedBy: userId },
-      });
-      await audit(tx, userId, 'STAFF_JOINED', current.teamId);
-      return publicUser(updated);
+      requireRule(
+        !user.teamId || this.config.MULTI_TEAM_ENABLED === 'true',
+        409,
+        'MULTI_TEAM_DISABLED',
+        'Joining additional teams is not enabled yet.',
+      );
+      const account = await tx.account.findUniqueOrThrow({ where: { id: user.accountId } });
+      if (current.kind === 'MANAGER')
+        requireRule(
+          (authMethod ?? (user.role === 'MANAGER' ? 'PASSWORD' : 'PIN')) === 'PASSWORD' &&
+            account.passwordHash,
+          403,
+          'PASSWORD_REQUIRED',
+          'Sign in with your password before joining as team staff. You can set a password through email recovery.',
+        );
+      let pinHash = account.pinHash;
+      if (current.kind === 'PLAYER' && !pinHash) {
+        requireRule(pin, 422, 'PIN_REQUIRED', 'Choose a four-digit PIN for player access.');
+        pinHash = await argon2.hash(pin, { type: argon2.argon2id });
+        await tx.account.update({ where: { id: account.id }, data: { pinHash } });
+      }
+      const data = {
+        teamId: current.teamId,
+        role: current.kind,
+        pinHash: current.kind === 'PLAYER' ? pinHash : null,
+        passwordHash: current.kind === 'MANAGER' ? account.passwordHash : null,
+        isVerified: true,
+        active: true,
+        activatedAt: new Date(),
+        pendingInvitationId: null,
+      };
+      const updated =
+        !user.teamId && user.role === current.kind
+          ? await tx.user.update({ where: { id: userId }, data })
+          : await tx.user.create({
+              data: { ...data, name: user.name, email: account.email, accountId: account.id },
+            });
+      if (current.kind === 'MANAGER')
+        await tx.invitation.update({
+          where: { id: current.id },
+          data: { acceptedAt: new Date(), acceptedBy: updated.id },
+        });
+      await audit(
+        tx,
+        updated.id,
+        current.kind === 'MANAGER' ? 'STAFF_JOINED' : 'PLAYER_JOINED',
+        current.teamId,
+        undefined,
+        undefined,
+        undefined,
+        current.teamId,
+      );
+      return updated;
     });
+  }
+  async verifyPassword(accountId: string, password?: string) {
+    await rateLimit(this.db, `membership-step-up:${accountId}`, 5, 900);
+    const account = await this.db.account.findUniqueOrThrow({ where: { id: accountId } });
+    requireRule(
+      password && account.passwordHash && (await argon2.verify(account.passwordHash, password)),
+      403,
+      'PASSWORD_REQUIRED',
+      'Enter your account password. If you have no password, set one through email recovery.',
+    );
+  }
+  async switchMembership(user: User, membershipId: string, authMethod: string, password?: string) {
+    const target = await this.db.user.findFirst({
+      where: { id: membershipId, accountId: user.accountId },
+    });
+    requireRule(target, 404, 'NOT_FOUND', 'Team membership unavailable.');
+    if (target.role === 'MANAGER' && authMethod !== 'PASSWORD') {
+      await this.verifyPassword(user.accountId, password);
+      authMethod = 'PASSWORD';
+    }
+    return this.createSession(target, authMethod);
   }
   private async otpLimits(db: PrismaClient | Prisma.TransactionClient, email: string) {
     // Rate limits apply to nonexistent accounts too, avoiding enumeration through timing/state.
@@ -242,7 +382,7 @@ export class AuthService {
   }
   private async queueOtp(tx: Prisma.TransactionClient, user: User, purpose: OtpPurpose) {
     await tx.verificationToken.updateMany({
-      where: { userId: user.id, purpose, consumedAt: null },
+      where: { user: { accountId: user.accountId }, purpose, consumedAt: null },
       data: { consumedAt: new Date() },
     });
     const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
@@ -269,18 +409,23 @@ export class AuthService {
       },
     });
   }
+  private async otpUser(email: string, purpose: OtpPurpose) {
+    return this.db.user.findFirst({
+      where: {
+        email,
+        removedAt: null,
+        ...(purpose === 'PIN_RESET' ? { role: 'PLAYER' as const } : {}),
+      },
+      orderBy: [{ active: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
   async issueOtp(email: string, purpose: OtpPurpose) {
     await this.otpLimits(this.db, email);
-    const user = await this.db.user.findUnique({ where: { email } });
-    if (
-      !user ||
-      user.removedAt ||
-      (purpose === 'VERIFY_EMAIL' && user.isVerified) ||
-      (purpose === 'PIN_RESET' && user.role !== 'PLAYER') ||
-      (purpose === 'PASSWORD_RESET' && user.role !== 'MANAGER')
-    )
+    const user = await this.otpUser(email, purpose);
+    if (!user || (purpose === 'VERIFY_EMAIL' && user.isVerified))
       return { message: 'If eligible, a code will be sent.' };
     await this.db.$transaction(async (tx) => {
+      await lock(tx, 'Account', user.accountId);
       await lock(tx, 'User', user.id);
       const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
       if (!current.removedAt && (purpose !== 'VERIFY_EMAIL' || !current.isVerified))
@@ -288,24 +433,22 @@ export class AuthService {
     });
     return { message: 'If eligible, a code will be sent.' };
   }
-  async consumeOtp(email: string, otp: string, purpose: OtpPurpose, pin?: string) {
-    const user = await this.db.user.findUnique({ where: { email } });
-    requireRule(user, 422, 'OTP_INVALID', 'The code is invalid or expired.');
+  async consumeOtp(email: string, otp: string, purpose: OtpPurpose, credential?: string) {
+    const account = await this.db.account.findUnique({ where: { email } });
+    requireRule(account, 422, 'OTP_INVALID', 'The code is invalid or expired.');
     const changing = purpose === 'PIN_RESET' || purpose === 'PASSWORD_RESET';
-    requireRule(
-      !changing || (purpose === 'PIN_RESET' ? user.role === 'PLAYER' : user.role === 'MANAGER'),
-      422,
-      'OTP_INVALID',
-      'The code is invalid or expired.',
-    );
-    const credentialHash = pin ? await argon2.hash(pin, { type: argon2.argon2id }) : undefined;
+    const credentialHash = credential
+      ? await argon2.hash(credential, { type: argon2.argon2id })
+      : undefined;
     const result = await this.db.$transaction(async (tx) => {
-      await lock(tx, 'User', user.id);
+      await lock(tx, 'Account', account.id);
       const token = await tx.verificationToken.findFirst({
-        where: { userId: user.id, purpose, consumedAt: null },
+        where: { user: { accountId: account.id }, purpose, consumedAt: null },
         orderBy: { createdAt: 'desc' },
       });
       if (!token || token.expiresAt <= new Date() || token.attempts >= 5) return null;
+      const user = await tx.user.findUniqueOrThrow({ where: { id: token.userId } });
+      await lock(tx, 'User', user.id);
       const valid = safeEqual(
         token.otpHash,
         keyedDigest(this.config.SESSION_SECRET, `${user.id}:${purpose}:${otp}`),
@@ -314,28 +457,45 @@ export class AuthService {
         where: { id: token.id },
         data: { attempts: { increment: 1 }, ...(valid ? { consumedAt: new Date() } : {}) },
       });
-      if (!valid) return null;
-      const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
-      if (current.removedAt) return null;
-      if (changing && current.isVerified && !current.active) return null;
-      if (credentialHash)
+      if (
+        !valid ||
+        user.removedAt ||
+        (changing && user.isVerified && !user.active) ||
+        (purpose === 'PIN_RESET' && user.role !== 'PLAYER')
+      )
+        return null;
+      if (credentialHash) {
+        await tx.account.update({
+          where: { id: account.id },
+          data:
+            purpose === 'PASSWORD_RESET'
+              ? { passwordHash: credentialHash }
+              : { pinHash: credentialHash },
+        });
+        await tx.user.updateMany({
+          where: {
+            accountId: account.id,
+            role: purpose === 'PASSWORD_RESET' ? 'MANAGER' : 'PLAYER',
+          },
+          data:
+            purpose === 'PASSWORD_RESET'
+              ? { passwordHash: credentialHash }
+              : { pinHash: credentialHash },
+        });
         await tx.deviceSession.updateMany({
-          where: { userId: user.id, revokedAt: null },
+          where: { user: { accountId: account.id }, revokedAt: null },
           data: { revokedAt: new Date() },
         });
-      const verified = await tx.user.update({
-        where: { id: user.id },
-        data: {
-          ...(credentialHash
-            ? purpose === 'PASSWORD_RESET'
-              ? { passwordHash: credentialHash }
-              : { pinHash: credentialHash }
-            : {}),
-          ...(!current.isVerified
-            ? { isVerified: true, active: true, activatedAt: new Date() }
-            : {}),
-        },
-      });
+        await tx.pushSubscription.deleteMany({ where: { user: { accountId: account.id } } });
+      }
+      if (!account.isVerified) {
+        await tx.account.update({ where: { id: account.id }, data: { isVerified: true } });
+        await tx.user.updateMany({
+          where: { accountId: account.id, isVerified: false, removedAt: null },
+          data: { isVerified: true, active: true, activatedAt: new Date() },
+        });
+      }
+      const verified = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
       await audit(tx, user.id, changing ? purpose : 'EMAIL_VERIFIED', user.id);
       return verified;
     });
@@ -347,30 +507,50 @@ export class AuthService {
     await rateLimit(this.db, `login-ip:${ip}`, 30, 900);
     const key = `login-account:${keyedDigest(this.config.SESSION_SECRET, email)}`;
     const blocked = await this.db.rateLimitBucket.findUnique({ where: { key } });
-    requireRule(
-      !blocked || blocked.expiresAt <= new Date() || blocked.count < 5,
-      429,
-      'RATE_LIMITED',
-      'Too many attempts; try again later.',
-    );
-    const user = await this.db.user.findUnique({ where: { email } });
+    if (blocked && blocked.expiresAt > new Date() && blocked.count >= 5)
+      throw new AppError(
+        429,
+        'RATE_LIMITED',
+        'Too many attempts; try again later.',
+        Math.max(1, Math.ceil((blocked.expiresAt.getTime() - Date.now()) / 1000)),
+      );
+    const account = await this.db.account.findUnique({ where: { email } });
+    const profiles = account
+      ? await this.db.user.findMany({
+          where: { accountId: account.id },
+          orderBy: [{ active: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+    const user =
+      profiles.find((p) => p.role === role && !p.removedAt && p.active) ??
+      profiles.find((p) => p.role === role) ??
+      (role === 'MANAGER' && account?.passwordHash
+        ? profiles.find((p) => !p.removedAt && p.active)
+        : undefined);
     // A fixed dummy hash maintains the expensive verification path for unknown email addresses.
     const hash =
-      (role === 'MANAGER' ? user?.passwordHash : user?.pinHash) ?? (await this.dummyHash);
+      (role === 'MANAGER' ? account?.passwordHash : account?.pinHash) ?? (await this.dummyHash);
     const valid = await argon2.verify(hash, pin);
-    if (user && user.role === role && valid && user.removedAt)
+    if (user && valid && user.removedAt)
       throw new AppError(
         403,
         'PLAYER_REMOVED',
         'You have been removed from your team. Contact your coach or manager for help.',
       );
-    if (user && user.role === role && valid && !user.isVerified)
+    if (user && valid && !user.isVerified)
       throw new AppError(
         403,
         'EMAIL_VERIFICATION_REQUIRED',
         'Verify your email before signing in.',
       );
-    if (!user || user.role !== role || !valid || !user.isVerified || !user.active) {
+    if (
+      !user ||
+      (role === 'PLAYER' && user.role !== 'PLAYER') ||
+      !valid ||
+      !account?.isVerified ||
+      !user.isVerified ||
+      !user.active
+    ) {
       await rateLimit(this.db, key, 5, 900);
       throw new AppError(
         401,
@@ -379,9 +559,15 @@ export class AuthService {
       );
     }
     await this.db.rateLimitBucket.deleteMany({ where: { key } });
-    return this.createSession(user);
+    return this.createSession(user, role === 'MANAGER' ? 'PASSWORD' : 'PIN');
   }
-  async createSession(user: User) {
+  async createSession(user: User, authMethod = user.role === 'MANAGER' ? 'PASSWORD' : 'PIN') {
+    requireRule(
+      user.role !== 'MANAGER' || authMethod === 'PASSWORD',
+      403,
+      'PASSWORD_REQUIRED',
+      'A password is required for staff access.',
+    );
     const token = randomToken();
     await this.db.$transaction(async (tx) => {
       await lock(tx, 'User', user.id);
@@ -401,6 +587,7 @@ export class AuthService {
       await tx.deviceSession.create({
         data: {
           userId: user.id,
+          authMethod,
           tokenHash: digest(token),
           expiresAt: new Date(Date.now() + 30 * 86400_000),
         },
@@ -409,7 +596,7 @@ export class AuthService {
     return {
       token,
       csrfToken: keyedDigest(this.config.SESSION_SECRET, `csrf:${token}`),
-      ...(await this.context(user)),
+      ...(await this.context(user, authMethod)),
     };
   }
   async resolve(token: string | undefined, reportRemoval = false) {

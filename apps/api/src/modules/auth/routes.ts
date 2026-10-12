@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { schemas, pagination } from '@pitchpresence/shared';
 import type { Router, RouteContext } from '../../plugins/router.js';
 import { empty } from '../../plugins/router.js';
-import { cookieName, keyedDigest, requireRule, rateLimit } from '../../plugins/core.js';
+import { cookieName, digest, keyedDigest, requireRule, rateLimit } from '../../plugins/core.js';
 import type { Config } from '../../config/index.js';
 import { AuthService } from './service.js';
 export function authRoutes(r: Router, auth: AuthService, config: Config) {
@@ -18,6 +18,9 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
       maxAge: 30 * 86400,
     });
     return {
+      memberships: result.memberships,
+      authMethod: result.authMethod,
+      hasPlayerPin: result.hasPlayerPin,
       user: result.user,
       team: result.team,
       pendingInvitation: result.pendingInvitation,
@@ -60,7 +63,20 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     'POST',
     '/api/v1/auth/staff-invitation/accept',
     z.object({ token: z.string().min(32).max(200).optional() }).strict(),
-    (i, c) => auth.acceptInvitation(c.user.id, i.token),
+    async (i, c) => {
+      const invitation = i.token
+        ? await r.db.invitation.findUnique({ where: { tokenHash: digest(i.token) } })
+        : c.user.pendingInvitationId
+          ? await r.db.invitation.findUnique({ where: { id: c.user.pendingInvitationId } })
+          : null;
+      requireRule(
+        invitation?.kind === 'MANAGER',
+        422,
+        'INVITATION_INVALID',
+        'A staff invitation is required.',
+      );
+      return auth.acceptInvitation(c.user.id, i.token, c.session.authMethod);
+    },
     { access: 'authenticated' },
   );
   r.add(
@@ -75,7 +91,7 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     '/api/v1/auth/resend-otp',
     schemas.email,
     async (i, c) => {
-      await rateLimit(r.db, `otp-ip:${c.request.ip}`, 20, 3600);
+      await rateLimit(r.db, `verification-ip-v2:${c.request.ip}`, 200, 3600);
       return auth.issueOtp(i.email, 'VERIFY_EMAIL');
     },
     { access: 'public' },
@@ -120,12 +136,70 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     '/api/v1/auth/me',
     empty,
     async (_, c) => ({
-      ...(await auth.context(c.user)),
+      ...(await auth.context(c.user, c.session.authMethod)),
       csrfToken: keyedDigest(
         config.SESSION_SECRET,
         `csrf:${c.request.cookies[cookieName(config)]!}`,
       ),
     }),
+    { access: 'authenticated' },
+  );
+  r.add(
+    'POST',
+    '/api/v1/auth/memberships/switch',
+    z
+      .object({
+        membershipId: z.string().uuid(),
+        password: schemas.staffLogin.shape.password.optional(),
+      })
+      .strict(),
+    async (i, c) => {
+      const result = await auth.switchMembership(
+        c.user,
+        i.membershipId,
+        c.session.authMethod,
+        i.password,
+      );
+      await r.db.deviceSession.update({
+        where: { id: c.session.id },
+        data: { revokedAt: new Date() },
+      });
+      await r.db.pushSubscription.deleteMany({ where: { sessionId: c.session.id } });
+      return establish(result, c);
+    },
+    { access: 'authenticated' },
+  );
+  r.add(
+    'POST',
+    '/api/v1/auth/invitations/accept',
+    z
+      .object({
+        token: z.string().min(32).max(200),
+        pin: z
+          .string()
+          .regex(/^\d{4}$/)
+          .optional(),
+        password: schemas.staffLogin.shape.password.optional(),
+      })
+      .strict(),
+    async (i, c) => {
+      let method = c.session.authMethod;
+      const invitation = await r.db.invitation.findUnique({
+        where: { tokenHash: digest(i.token) },
+      });
+      if (invitation?.kind === 'MANAGER' && method !== 'PASSWORD') {
+        await auth.verifyPassword(c.user.accountId, i.password);
+        method = 'PASSWORD';
+      }
+      const member = await auth.acceptInvitation(c.user.id, i.token, method, i.pin);
+      const result = await auth.createSession(member, method);
+      await r.db.deviceSession.update({
+        where: { id: c.session.id },
+        data: { revokedAt: new Date() },
+      });
+      await r.db.pushSubscription.deleteMany({ where: { sessionId: c.session.id } });
+      return establish(result, c);
+    },
     { access: 'authenticated' },
   );
   r.add(
@@ -150,13 +224,19 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     async (i, c) => {
       if (i.cursor)
         requireRule(
-          await r.db.deviceSession.findFirst({ where: { id: i.cursor, userId: c.user.id } }),
+          await r.db.deviceSession.findFirst({
+            where: { id: i.cursor, user: { accountId: c.user.accountId } },
+          }),
           404,
           'NOT_FOUND',
           'Device cursor unavailable.',
         );
       const rows = await r.db.deviceSession.findMany({
-        where: { userId: c.user.id, revokedAt: null, expiresAt: { gt: new Date() } },
+        where: {
+          user: { accountId: c.user.accountId },
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
         select: { id: true, createdAt: true, lastUsedAt: true, expiresAt: true },
         take: i.limit + 1,
         orderBy: { id: 'asc' },
@@ -175,12 +255,12 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     empty,
     async (_, c) => {
       const result = await r.db.deviceSession.updateMany({
-        where: { id: c.params.id, userId: c.user.id },
+        where: { id: c.params.id, user: { accountId: c.user.accountId } },
         data: { revokedAt: new Date() },
       });
       requireRule(result.count, 404, 'NOT_FOUND', 'Session not found.');
       await r.db.pushSubscription.deleteMany({
-        where: { sessionId: c.params.id, userId: c.user.id },
+        where: { sessionId: c.params.id, user: { accountId: c.user.accountId } },
       });
       return { revoked: true };
     },

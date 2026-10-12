@@ -246,3 +246,143 @@ test('a lost team creation response can be retried without another team', async 
   await expect(page).toHaveURL(/\/management$/);
   expect(state.teamWrites).toBe(1);
 });
+
+test('registration throttling preserves input and enables an explicit retry without resubmitting', async ({
+  page,
+}) => {
+  await mockOnboarding(page);
+  let attempts = 0;
+  await page.route('**/api/v1/auth/staff-register', (route) => {
+    attempts++;
+    return route.fulfill({
+      status: 429,
+      json: {
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many attempts; try again later.',
+          retryAfterSeconds: 3,
+        },
+      },
+    });
+  });
+  await page.clock.install();
+  await page.goto('/signup');
+  await signup(page);
+  const button = page.getByRole('button', { name: 'Create staff account' });
+  await expect(page.getByText('Too many attempts. Try again in 3s.')).toBeVisible();
+  await expect(button).toBeDisabled();
+  await expect(page.getByLabel('Choose a password')).toHaveValue('CoachPass123!');
+  await page.clock.fastForward(4000);
+  await expect(button).toBeEnabled();
+  expect(attempts).toBe(1);
+  await button.click();
+  expect(attempts).toBe(2);
+});
+
+test('resend throttling uses the header fallback and does not block entering a verification code', async ({
+  page,
+}) => {
+  await mockOnboarding(page);
+  await page.route('**/api/v1/auth/resend-otp', (route) =>
+    route.fulfill({
+      status: 429,
+      headers: { 'Retry-After': '3' },
+      json: { error: { code: 'RATE_LIMITED', message: 'Too many attempts; try again later.' } },
+    }),
+  );
+  await page.clock.install();
+  await page.goto('/signup');
+  await signup(page);
+  await expect(page.getByLabel('Six-digit email code')).toBeVisible();
+  await page.clock.fastForward(61000);
+  await page.getByRole('button', { name: 'Resend email code' }).click();
+  await expect(page.getByRole('button', { name: 'Resend code in 3s' })).toBeDisabled();
+  await page.getByLabel('Six-digit email code').fill('012345');
+  await expect(page.getByRole('button', { name: 'Verify email', exact: true })).toBeEnabled();
+  await page.clock.fastForward(4000);
+  await expect(page.getByRole('button', { name: 'Resend email code' })).toBeEnabled();
+});
+
+test('a throttled player invitation remains in memory and can be checked again explicitly', async ({
+  page,
+}) => {
+  await mockOnboarding(page);
+  let previews = 0;
+  await page.route('**/api/v1/invitations/preview?*', (route) => {
+    previews++;
+    expect(new URL(route.request().url()).searchParams.get('token')).toBe('invitation-in-memory');
+    return previews === 1
+      ? route.fulfill({
+          status: 429,
+          json: {
+            error: {
+              code: 'RATE_LIMITED',
+              message: 'Too many attempts; try again later.',
+              retryAfterSeconds: 3,
+            },
+          },
+        })
+      : route.fulfill({ json: { teamName: team.name, email: null, kind: 'PLAYER' } });
+  });
+  await page.clock.install();
+  await page.goto('/register?invite=invitation-in-memory');
+  await expect(page.getByRole('button', { name: 'Retry invitation check in 3s' })).toBeDisabled();
+  await expect(page).toHaveURL(/\/register$/);
+  await expect(
+    page.getByText('Ask your coach or manager for a new invitation link.'),
+  ).not.toBeVisible();
+  await page.clock.fastForward(4000);
+  expect(previews).toBe(1);
+  await page.getByRole('button', { name: 'Retry invitation check', exact: true }).click();
+  await expect(page.getByLabel('Your name')).toBeVisible();
+  expect(previews).toBe(2);
+});
+
+test('legacy throttling responses retain the server message without an invented countdown', async ({
+  page,
+}) => {
+  await mockOnboarding(page);
+  await page.route('**/api/v1/auth/staff-register', (route) =>
+    route.fulfill({
+      status: 429,
+      json: { error: { code: 'RATE_LIMITED', message: 'Too many attempts; try again later.' } },
+    }),
+  );
+  await page.goto('/signup');
+  await signup(page);
+  await expect(
+    page.getByText('Too many attempts; try again later.', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create staff account' })).toBeEnabled();
+});
+
+test('login throttling keeps credentials and requires a manual retry after the wait', async ({
+  page,
+}) => {
+  await mockOnboarding(page);
+  let attempts = 0;
+  await page.route('**/api/v1/auth/staff-login', (route) => {
+    attempts++;
+    return route.fulfill({
+      status: 429,
+      json: {
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many attempts; try again later.',
+          retryAfterSeconds: 3,
+        },
+      },
+    });
+  });
+  await page.clock.install();
+  await page.goto('/sign-in');
+  await page.getByLabel('Email address').fill(coach.email);
+  await page.getByLabel('Password', { exact: true }).fill('CoachPass123!');
+  const button = page.getByRole('button', { name: 'Sign in', exact: true });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('CoachPass123!');
+  await page.clock.fastForward(4000);
+  await expect(button).toBeEnabled();
+  expect(attempts).toBe(1);
+});

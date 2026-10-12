@@ -44,9 +44,22 @@ enum OtpPurpose {
   PASSWORD_RESET
 }
 
+// Global identity; User records below are team memberships with stable historical IDs.
+model Account {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String?
+  pinHash      String?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  memberships  User[]
+}
+
 model User {
   id                  String               @id @default(uuid()) @db.Uuid
-  email               String               @unique
+  email               String
+  accountId           String               @default(dbgenerated()) @db.Uuid
+  account             Account              @relation(fields: [accountId], references: [id])
   name                String
   role                Role                 @default(PLAYER)
   pinHash             String?
@@ -67,6 +80,8 @@ model User {
   pushSubscriptions   PushSubscription[]
 
   @@unique([teamId, id])
+  @@unique([accountId, teamId])
+  @@index([email])
 }
 
 model Invitation {
@@ -98,14 +113,15 @@ model VerificationToken {
 }
 
 model DeviceSession {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  user       User      @relation(fields: [userId], references: [id])
-  tokenHash  String    @unique
-  expiresAt  DateTime  @db.Timestamptz(3)
-  lastUsedAt DateTime  @default(now()) @db.Timestamptz(3)
-  revokedAt  DateTime? @db.Timestamptz(3)
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  id               String            @id @default(uuid()) @db.Uuid
+  userId           String            @db.Uuid
+  user             User              @relation(fields: [userId], references: [id])
+  authMethod       String            @default("PIN")
+  tokenHash        String            @unique
+  expiresAt        DateTime          @db.Timestamptz(3)
+  lastUsedAt       DateTime          @default(now()) @db.Timestamptz(3)
+  revokedAt        DateTime?         @db.Timestamptz(3)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
   pushSubscription PushSubscription?
 
   @@unique([id, userId])
