@@ -26,6 +26,16 @@ Set these in the Coolify application environment.
 | `TRUST_PROXY`                                                   | no       | Traefik proxy IP or CIDR (the Coolify docker bridge subnet). |
 | `LOG_LEVEL`                                                     | no       | Default `info`.                                              |
 
+### Finding the `TRUST_PROXY` subnet
+
+Without `TRUST_PROXY`, every request appears to come from Traefik, so IP-keyed rate limits (`otp-ip`, `login-ip`, `register`, `invitation-preview`) are shared by all clients. On the Coolify host run:
+
+```bash
+docker network inspect coolify -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+```
+
+Set `TRUST_PROXY` to that CIDR (for example `172.21.0.0/16`). This is safe because the `api` service publishes no host port, so only containers on that network can reach it. If Cloudflare proxying sits in front of Traefik, client IPs will be Cloudflare edges; trust its ranges too.
+
 ## Deploy
 
 1. Create a Docker Compose application in Coolify pointing at this repository and branch, compose file `docker-compose.yaml`.
