@@ -136,6 +136,9 @@ async function signup(page: Page, invited = false) {
   await page.getByLabel('Choose a password').fill('CoachPass123!');
   await page.getByRole('button', { name: 'Create staff account' }).click();
 }
+const clockStart = new Date('2026-10-13T12:00:00Z');
+const clockPause = new Date('2026-10-13T13:00:00Z');
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://images.pexels.com/**', (route) => route.abort());
   await page.route('https://fonts.googleapis.com/**', (route) => route.abort());
@@ -265,18 +268,22 @@ test('registration throttling preserves input and enables an explicit retry with
       },
     });
   });
-  await page.clock.install();
+  await page.clock.install({ time: clockStart });
   await page.goto('/signup');
+  await page.clock.pauseAt(clockPause);
   await signup(page);
   const button = page.getByRole('button', { name: 'Create staff account' });
   await expect(page.getByText('Too many attempts. Try again in 3s.')).toBeVisible();
   await expect(button).toBeDisabled();
   await expect(page.getByLabel('Choose a password')).toHaveValue('CoachPass123!');
-  await page.clock.fastForward(4000);
+  await page.clock.fastForward(2000);
+  await expect(page.getByText('Too many attempts. Try again in 1s.')).toBeVisible();
+  await expect(button).toBeDisabled();
+  await page.clock.fastForward(2000);
   await expect(button).toBeEnabled();
   expect(attempts).toBe(1);
   await button.click();
-  expect(attempts).toBe(2);
+  await expect.poll(() => attempts).toBe(2);
 });
 
 test('resend throttling uses the header fallback and does not block entering a verification code', async ({
@@ -290,8 +297,9 @@ test('resend throttling uses the header fallback and does not block entering a v
       json: { error: { code: 'RATE_LIMITED', message: 'Too many attempts; try again later.' } },
     }),
   );
-  await page.clock.install();
+  await page.clock.install({ time: clockStart });
   await page.goto('/signup');
+  await page.clock.pauseAt(clockPause);
   await signup(page);
   await expect(page.getByLabel('Six-digit email code')).toBeVisible();
   await page.clock.fastForward(61000);
@@ -308,9 +316,11 @@ test('a throttled player invitation remains in memory and can be checked again e
 }) => {
   await mockOnboarding(page);
   let previews = 0;
-  await page.route('**/api/v1/invitations/preview?*', (route) => {
+  await page.route('**/api/v1/invitations/preview?*', async (route) => {
     previews++;
     expect(new URL(route.request().url()).searchParams.get('token')).toBe('invitation-in-memory');
+    // Preview starts during navigation: pause before delivering the countdown response.
+    if (previews === 1) await page.clock.pauseAt(clockPause);
     return previews === 1
       ? route.fulfill({
           status: 429,
@@ -324,7 +334,7 @@ test('a throttled player invitation remains in memory and can be checked again e
         })
       : route.fulfill({ json: { teamName: team.name, email: null, kind: 'PLAYER' } });
   });
-  await page.clock.install();
+  await page.clock.install({ time: clockStart });
   await page.goto('/register?invite=invitation-in-memory');
   await expect(page.getByRole('button', { name: 'Retry invitation check in 3s' })).toBeDisabled();
   await expect(page).toHaveURL(/\/register$/);
@@ -374,8 +384,9 @@ test('login throttling keeps credentials and requires a manual retry after the w
       },
     });
   });
-  await page.clock.install();
+  await page.clock.install({ time: clockStart });
   await page.goto('/sign-in');
+  await page.clock.pauseAt(clockPause);
   await page.getByLabel('Email address').fill(coach.email);
   await page.getByLabel('Password', { exact: true }).fill('CoachPass123!');
   const button = page.getByRole('button', { name: 'Sign in', exact: true });
