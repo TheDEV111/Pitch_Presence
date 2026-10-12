@@ -59,12 +59,17 @@ export class TeamService {
   }
   async invite(user: User, email: string, requestId: string) {
     const teamId = await actorTeam(this.db, user.id);
-    const existing = await this.db.user.findUnique({ where: { email } });
+    const existing = await this.db.user.findFirst({
+      where: {
+        email,
+        ...(this.config.MULTI_TEAM_ENABLED === 'true' ? { teamId } : { teamId: { not: null } }),
+      },
+    });
     requireRule(
-      !existing || (existing.role === 'MANAGER' && !existing.teamId),
+      !existing,
       409,
       'ACCOUNT_ALREADY_ASSIGNED',
-      'This email already belongs to a team or player account.',
+      'This account already has a membership in this team.',
     );
     const token = randomToken();
     return this.db.$transaction(async (tx) => {

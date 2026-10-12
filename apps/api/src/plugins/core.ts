@@ -6,6 +6,7 @@ export class AppError extends Error {
     public status: number,
     public code: string,
     message: string,
+    public retryAfterSeconds?: number,
   ) {
     super(message);
   }
@@ -60,6 +61,7 @@ export type Tx = Prisma.TransactionClient;
 export async function lock(
   tx: Tx,
   table:
+    | 'Account'
     | 'User'
     | 'TrainingSession'
     | 'MonthlyDues'
@@ -103,11 +105,17 @@ export async function rateLimit(
   max: number,
   seconds: number,
 ) {
-  const rows = await db.$queryRaw<{ count: number }[]>`
+  const rows = await db.$queryRaw<{ count: number; retryAfterSeconds: number }[]>`
  INSERT INTO "RateLimitBucket" (key,count,"expiresAt") VALUES (${key},1,now()+${seconds}*interval '1 second')
  ON CONFLICT (key) DO UPDATE SET count=CASE WHEN "RateLimitBucket"."expiresAt"<=now() THEN 1 ELSE "RateLimitBucket".count+1 END,
- "expiresAt"=CASE WHEN "RateLimitBucket"."expiresAt"<=now() THEN now()+${seconds}*interval '1 second' ELSE "RateLimitBucket"."expiresAt" END RETURNING count`;
-  requireRule(rows[0]!.count <= max, 429, 'RATE_LIMITED', 'Too many attempts; try again later.');
+ "expiresAt"=CASE WHEN "RateLimitBucket"."expiresAt"<=now() THEN now()+${seconds}*interval '1 second' ELSE "RateLimitBucket"."expiresAt" END RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM ("expiresAt" - now()))))::integer AS "retryAfterSeconds"`;
+  if (rows[0]!.count > max)
+    throw new AppError(
+      429,
+      'RATE_LIMITED',
+      'Too many attempts; try again later.',
+      rows[0]!.retryAfterSeconds,
+    );
 }
 export const cookieName = (c: Config) =>
   c.NODE_ENV === 'production' ? '__Host-pitchpresence' : 'pitchpresence';

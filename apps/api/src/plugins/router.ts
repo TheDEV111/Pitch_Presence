@@ -164,9 +164,17 @@ export class Router {
         request.authSession = session;
         if (access !== 'public') {
           requireRule(session, 401, 'AUTHENTICATION_REQUIRED', 'Please sign in.');
+          const expectedMembership = request.headers['x-membership-id'];
+          requireRule(
+            !expectedMembership || expectedMembership === session.user.id,
+            409,
+            'WORKSPACE_CHANGED',
+            'Your selected team changed. Reload this page before continuing.',
+          );
           if (access !== 'authenticated')
             requireRule(
-              session.user.role === access,
+              session.user.role === access &&
+                (access !== 'MANAGER' || session.authMethod === 'PASSWORD'),
               403,
               'FORBIDDEN',
               'You do not have access to this action.',

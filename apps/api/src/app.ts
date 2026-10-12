@@ -108,10 +108,12 @@ export async function buildApp(
       code = 'INTERNAL_ERROR',
       message = 'An unexpected error occurred.';
     let details: unknown;
+    let retryAfterSeconds: number | undefined;
     if (error instanceof AppError) {
       status = error.status;
       code = error.code;
       message = error.message;
+      retryAfterSeconds = error.retryAfterSeconds;
     } else if (error instanceof ZodError) {
       status = 422;
       code = 'VALIDATION_FAILED';
@@ -138,9 +140,16 @@ export async function buildApp(
     }
     if (status === 500)
       app.log.error({ requestId: request.id, errorType: error.name }, 'request failed');
-    reply
-      .code(status)
-      .send({ error: { code, message, requestId: request.id, ...(details ? { details } : {}) } });
+    if (retryAfterSeconds !== undefined) reply.header('Retry-After', retryAfterSeconds);
+    reply.code(status).send({
+      error: {
+        code,
+        message,
+        requestId: request.id,
+        ...(details ? { details } : {}),
+        ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+      },
+    });
   });
   app.setNotFoundHandler((request, reply) =>
     reply

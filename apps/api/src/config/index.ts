@@ -22,6 +22,7 @@ const schema = z.object({
       'Use explicit IP addresses or nonzero CIDR ranges',
     ),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  MULTI_TEAM_ENABLED: z.enum(['true', 'false']).default('false'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   APP_URL: z.string().url(),
   DATABASE_URL: z.string().min(1),

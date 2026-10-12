@@ -25,7 +25,8 @@ TRUNCATE TABLE
   public."Invitation",
   public."User",
   public."Team",
-  public."RateLimitBucket";
+  public."RateLimitBucket",
+  public."Account";
 
 SELECT
   (SELECT count(*) FROM public."User") AS accounts,

@@ -48,6 +48,8 @@ export function responseSchema(method: string, url: string): z.ZodTypeAny {
     return teamSettingsResponse;
   if (
     url === '/api/v1/auth/me' ||
+    url === '/api/v1/auth/memberships/switch' ||
+    url === '/api/v1/auth/invitations/accept' ||
     url.endsWith('/device-login') ||
     url.endsWith('/staff-login') ||
     url.endsWith('/verify-email')

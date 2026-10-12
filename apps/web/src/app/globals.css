@@ -2480,3 +2480,38 @@ pre {
   font-size: 24px;
   letter-spacing: 0.06em;
 }
+
+.team-switcher {
+  position: relative;
+  font-size: 14px;
+}
+.team-switcher summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.team-switcher form {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  width: min(340px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--color-ink, #171717);
+  background: #fff9f1;
+  border-radius: 8px;
+}
+.team-switcher select {
+  width: 100%;
+}
+.team-switcher p {
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .team-switcher form {
+    position: fixed;
+    top: 80px;
+    right: 16px;
+  }
+}

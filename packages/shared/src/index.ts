@@ -135,7 +135,13 @@ export type RegisterInput = z.infer<typeof schemas.register>;
 export type TrainingInput = z.infer<typeof schemas.training>;
 export type PaymentInput = z.infer<typeof schemas.initialize>;
 export interface ApiError {
-  error: { code: string; message: string; requestId: string; details?: unknown };
+  error: {
+    code: string;
+    message: string;
+    requestId: string;
+    details?: unknown;
+    retryAfterSeconds?: number;
+  };
 }
 export interface Page<T> {
   items: T[];
@@ -209,6 +215,7 @@ export const apiErrorResponse = z.object({
     message: z.string(),
     requestId: z.string(),
     details: z.unknown().optional(),
+    retryAfterSeconds: z.number().int().positive().optional(),
   }),
 });
 export type UserResponse = z.infer<typeof userResponse>;
@@ -220,6 +227,20 @@ export type DuesResponse = z.infer<typeof duesResponse>;
 export const teamResponse = z.object({ id, name: z.string(), createdAt: z.string().datetime() });
 export const authResponse = z.object({
   user: userResponse,
+  authMethod: z.enum(['PIN', 'PASSWORD']).optional(),
+  hasPlayerPin: z.boolean().optional(),
+  memberships: z
+    .array(
+      z.object({
+        id,
+        teamId: id,
+        teamName: z.string(),
+        role: z.enum(['PLAYER', 'MANAGER']),
+        active: z.boolean(),
+        removedAt: z.string().datetime().nullable(),
+      }),
+    )
+    .optional(),
   team: teamResponse.nullable(),
   pendingInvitation: z
     .object({

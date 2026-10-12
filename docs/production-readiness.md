@@ -1,20 +1,20 @@
 # PitchPresence production readiness
 
-Reviewed against the working tree on 9 October 2026. This document records
+Deployment status updated on 12 October 2026. This document records
 implemented features, remaining release gates and validation evidence.
 
 ## Implemented and available to test
 
-| Area                | Current implementation                                                                                                         | Remaining acceptance                                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| Staff access        | Password sign-in, email verification, recovery, resumed onboarding, team creation and email-bound staff invitations.           | Deliver real emails and complete interrupted signup/recovery over HTTPS.                                                       |
-| Player access       | Team invitations, verification, four-digit PIN sign-in and PIN recovery.                                                       | Complete a real invitation journey and remembered-device login on a phone.                                                     |
-| Training attendance | Coach GPS session creation, rotating 30-second QR, player location checks, live roster, manual attendance and session closure. | Test outdoor accuracy, native-camera scanning, expired codes, duplicate scans and closure on real phones.                      |
-| Dues and banks      | NGN dues, manual transfer accounts, private receipt uploads, staff review, audit/reversal and retained Paystack integration.   | Test real transfers, PDF/PNG proof submission, staff review and email-confirmed bank changes. Paystack acceptance is deferred. |
-| Background jobs     | Durable database-backed email/payment jobs, leases, retries and reconciliation maintenance.                                    | Select a host that actually runs the worker, test crash recovery and monitor failures.                                         |
-| Frontend and PWA    | Role workspaces, installation launch, public-only offline screen, update guidance and safe media fallbacks.                    | HTTPS Android/iOS installation, offline/update flows and signed-in navigation.                                                 |
-| Release media       | Clean 15-second football exports, local fonts/icons/photos and desktop/tablet split-panel video.                               | Browser/device review of crops, autoplay, pause, reduced motion and media failure.                                             |
-| Data                | Prisma migrations and Supabase connection/setup instructions. User reported migration status up to date.                       | Recheck the intended deployment database, credentials, SSL, test/live separation and restore procedure.                        |
+| Area                | Current implementation                                                                                                       | Remaining acceptance                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Staff access        | Password sign-in, email verification, recovery, resumed onboarding, team creation and email-bound staff invitations.         | Deliver real emails and complete interrupted signup/recovery over HTTPS.                                                       |
+| Player access       | Team invitations, verification, four-digit PIN sign-in and PIN recovery.                                                     | Complete a real invitation journey and remembered-device login on a phone.                                                     |
+| Training attendance | Coach GPS session creation, rotating 30-second QR, live roster, manual attendance and session closure.                       | Test outdoor coach accuracy, native-camera scanning, expired codes, duplicate scans and closure on real phones.                |
+| Dues and banks      | NGN dues, manual transfer accounts, private receipt uploads, staff review, audit/reversal and retained Paystack integration. | Test real transfers, PDF/PNG proof submission, staff review and email-confirmed bank changes. Paystack acceptance is deferred. |
+| Background jobs     | Durable database-backed email/payment jobs, leases, retries and reconciliation maintenance.                                  | Confirm worker delivery on the selected VPS, test crash recovery and monitor failures.                                         |
+| Frontend and PWA    | Role workspaces, installation launch, public-only offline screen, update guidance and safe media fallbacks.                  | HTTPS Android/iOS installation, offline/update flows and signed-in navigation.                                                 |
+| Release media       | Clean 15-second football exports, local fonts/icons/photos and desktop/tablet split-panel video.                             | Browser/device review of crops, autoplay, pause, reduced motion and media failure.                                             |
+| Data                | Prisma migrations and Supabase connection/setup instructions. User reported migration status up to date.                     | Recheck the intended deployment database, credentials, SSL, test/live separation and restore procedure.                        |
 
 The latest local backend build, lint, formatting and TypeScript checks passed.
 The full automated suite passed 158 tests and skipped six: five require a
@@ -46,12 +46,17 @@ this session cannot access the Docker socket. No image build has been verified h
 
 ## 2. Select hosts and keep the worker operational
 
-The backend runs on Coolify via Docker Compose (API and worker); the
-frontend remains on Vercel. Follow [Coolify deployment](backend/coolify-deploy.md) for
-environment setup and routing. Public domains still need confirmation.
+The user reports the backend is deployed on a friend's VPS, managed with Coolify,
+and the frontend is deployed on Vercel; PostgreSQL remains on Supabase. The public
+URLs are `https://pitch-presence.kairos-devs.com` and
+`https://pitch-presence-api.futuredevs.com`. Follow [Coolify deployment](backend/coolify-deploy.md)
+for environment setup, migrations, supervision and routing, and the
+[production acceptance checklist](production-acceptance.md) to verify the live
+connection, worker, emails, receipts, QR attendance and device notifications.
+These deployments have not been independently health-checked from this session;
+public URL fetches were unavailable.
 
-Public frontend/backend URLs have not been supplied in this session. Confirm any
-existing projects before creating new ones. The current deployment shape is:
+The current deployment shape is:
 
 ```text
 Browser → public HTTPS frontend → /api/* proxy → Fastify API → Supabase PostgreSQL
@@ -86,7 +91,7 @@ explain why sleeping alternatives were not selected:
 An always-running host for both API and worker avoids the sleeping-worker issue.
 Moving processing to a serverless/event-driven host would be additional development
 and must preserve durable jobs, leases and prompt OTP delivery. The VPS is selected,
-but neither process has been deployed by this review.
+but its API and worker delivery still need recorded acceptance evidence.
 
 ## 3. Configure HTTPS and deployment environment
 
@@ -178,7 +183,9 @@ against a dedicated staging team. Tests must not rewrite real team/payment histo
 
 ## Next work
 
-Complete the Coolify deployment and deploy an HTTPS test environment
-with manual payments enabled. Complete real-device, email and receipt-review
-acceptance there. Paystack approval and live settlement are deferred until online
-checkout is resumed.
+Complete the [production acceptance checklist](production-acceptance.md) on the
+reported Coolify/Vercel deployments using dedicated QA accounts and manual
+payments. Record real-device, email, receipt-review and operator recovery results.
+Follow [team memberships](backend/team-memberships.md) for the new migration's
+maintenance window before enabling additional teams. Paystack approval and live
+settlement remain deferred until online checkout is resumed.

@@ -2,7 +2,7 @@
 
 ## System boundaries
 
-PitchPresence serves isolated football teams, with one team per account. It is an npm-workspaces monorepo with a Fastify TypeScript API, a background worker, browser-safe contracts, a server-only database package, and PostgreSQL/Prisma migrations. `apps/web` contains the Next.js frontend.
+PitchPresence serves isolated football teams, with one account identity and separate team memberships. See [team memberships](team-memberships.md) for migration and rollout details. It is an npm-workspaces monorepo with a Fastify TypeScript API, a background worker, browser-safe contracts, a server-only database package, and PostgreSQL/Prisma migrations. `apps/web` contains the Next.js frontend.
 
 ```mermaid
 flowchart LR
@@ -22,6 +22,7 @@ Each module owns HTTP routes and business services. Routes validate input, autho
 
 ```mermaid
 erDiagram
+    Account ||--o{ User : memberships
     Team ||--o{ User : contains
     Team ||--o{ TrainingSession : owns
     Team ||--o{ TeamPaymentProfile : configures
@@ -42,7 +43,7 @@ Additional SQL constraints enforce one OPEN training session per team, one pendi
 
 ## Identity and eligibility
 
-Reusable invitations expire after seven days and can be revoked. Registration forces PLAYER role, hashes the PIN and queues a six-digit OTP. Verification activates the player and creates a remembered device. Invites can register multiple players; a unique normalized email prevents duplicate identities.
+Reusable invitations expire after seven days and can be revoked. Registration forces PLAYER role, hashes the PIN and queues a six-digit OTP. Verification activates the player and creates a remembered device. Invites can register multiple players; a unique normalized Account email prevents duplicate identities, while each team has its own User membership record.
 
 PINs and staff passwords use Argon2id; OTP hashes are keyed digests; device tokens are random and hashed. Email-job OTPs are AES-GCM encrypted and erased from job payloads after delivery or final email failure. Session expiry is an absolute 30 days. Resends supersede older challenges. PIN and password resets revoke all remembered devices. Deactivation revokes devices without deleting history.
 
@@ -76,7 +77,7 @@ Logs contain request ID, route, status and latency without tokens, query strings
 
 ## Tenant boundaries and bank profiles
 
-Role-protected routes resolve `teamId` from the authenticated user, never request fields. Unassigned verified staff may only access onboarding and account/session endpoints. Lists, detail lookups, QR issuance/check-in, dues configuration, financial mutations, operations and audits are scoped to that team. Composite SQL foreign keys reject cross-team associations; membership and payment destination snapshots are immutable. A DuesPeriod is unique by `(teamId, month)` and uses a UUID for locking.
+Role-protected routes resolve `teamId` from the session-selected membership, never request fields. Staff routes also require password-strength authentication. Unassigned verified staff may only access onboarding and account/session endpoints. Lists, detail lookups, QR issuance/check-in, dues configuration, financial mutations, operations and audits are scoped to that team. Composite SQL foreign keys reject cross-team associations; membership and payment destination snapshots are immutable. A DuesPeriod is unique by `(teamId, month)` and uses a UUID for locking.
 
 `GET /management/overview` supplies the team's current session, five recent sessions, complete player counts, current paid/unpaid counts and resumable setup flags. Training history is paginated by descending `(startedAt, id)`. No complete-history download is needed to discover current training.
 

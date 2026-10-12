@@ -33,6 +33,7 @@
     "media:sync": "node scripts/sync-media.mjs",
     "test:web": "playwright test",
     "db:reset:development": "node --env-file=.env scripts/reset-development.mjs",
+    "db:delete:alx:test": "node --env-file=.env scripts/delete-alx-test-team.mjs",
     "db:clear:test": "node --env-file=.env scripts/clear-test-data.mjs",
     "security:check": "git ls-files -z | node scripts/check-github-tokens.mjs",
     "security:check:browser": "git ls-files -z | node scripts/check-github-tokens.mjs --browser",

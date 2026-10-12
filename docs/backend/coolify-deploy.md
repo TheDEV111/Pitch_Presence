@@ -14,17 +14,18 @@ Production runs from `docker-compose.yaml` as a Docker Compose application on Co
 
 Set these in the Coolify application environment.
 
-| Variable                                                        | Required | Notes                                                        |
-| --------------------------------------------------------------- | -------- | ------------------------------------------------------------ |
-| `DATABASE_URL`                                                  | yes      | Supabase connection string, with `?sslmode=require`.         |
-| `SESSION_SECRET`, `DATA_ENCRYPTION_SECRET`, `QR_SIGNING_SECRET` | yes      | Independent random strings, 32+ characters each.             |
-| `APP_URL`                                                       | yes      | Public web origin, for example `https://pitchpresence.com`.  |
-| `RESEND_API_KEY`, `EMAIL_FROM`                                  | yes      | Transactional email.                                         |
-| `PAYMENT_MODE`                                                  | no       | Default `MANUAL`.                                            |
-| `PAYSTACK_SECRET_KEY`                                           | no       | Only when Paystack is enabled.                               |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`        | no       | Web push.                                                    |
-| `TRUST_PROXY`                                                   | no       | Traefik proxy IP or CIDR (the Coolify docker bridge subnet). |
-| `LOG_LEVEL`                                                     | no       | Default `info`.                                              |
+| Variable                                                        | Required | Notes                                                                          |
+| --------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| `DATABASE_URL`                                                  | yes      | Supabase connection string, with `?sslmode=require`.                           |
+| `SESSION_SECRET`, `DATA_ENCRYPTION_SECRET`, `QR_SIGNING_SECRET` | yes      | Independent random strings, 32+ characters each.                               |
+| `APP_URL`                                                       | yes      | Public web origin, for example `https://pitchpresence.com`.                    |
+| `RESEND_API_KEY`, `EMAIL_FROM`                                  | yes      | Transactional email.                                                           |
+| `PAYMENT_MODE`                                                  | no       | Default `MANUAL`.                                                              |
+| `PAYSTACK_SECRET_KEY`                                           | no       | Only when Paystack is enabled.                                                 |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`        | no       | Web push.                                                                      |
+| `TRUST_PROXY`                                                   | no       | Traefik proxy IP or CIDR (the Coolify docker bridge subnet).                   |
+| `MULTI_TEAM_ENABLED`                                            | no       | Defaults to `false`; enable after the Account migration and acceptance checks. |
+| `LOG_LEVEL`                                                     | no       | Default `info`.                                                                |
 
 ### Finding the `TRUST_PROXY` subnet
 
@@ -50,3 +51,9 @@ docker compose --env-file <file with the required variables> -f docker-compose.y
 ```
 
 CI runs the same check plus an image build, migration and smoke test of both processes.
+
+## Membership migration maintenance window
+
+The API startup script automatically applies pending migrations. The Account migration is included in this release even when `MULTI_TEAM_ENABLED=false`. Before deploying this commit, back up Supabase and rehearse that migration on a restored copy. Stop both API and worker through Coolify, deploy the new API, and let the worker start after API health confirms migration completion. Deploy the compatible frontend and verify existing staff/player flows before enabling `MULTI_TEAM_ENABLED=true`. See [team memberships](team-memberships.md).
+
+Verify the logged client IP using two devices on different internet connections. A larger registration allowance complements correct proxy configuration; it cannot establish whether the deployed forwarding chain identifies each visitor correctly.

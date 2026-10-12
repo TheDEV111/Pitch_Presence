@@ -40,7 +40,7 @@ export function teamRoutes(r: Router, service: TeamService) {
     '/api/v1/invitations/preview',
     z.object({ token: z.string().min(32).max(200) }).strict(),
     async (i, c) => {
-      await rateLimit(r.db, `invitation-preview:${c.request.ip}`, 30, 60);
+      await rateLimit(r.db, `invitation-preview-v2:${c.request.ip}`, 120, 60);
       const row = await r.db.invitation.findUnique({ where: { tokenHash: digest(i.token) } });
       requireRule(
         row && !row.revokedAt && !row.acceptedAt && row.expiresAt > new Date(),

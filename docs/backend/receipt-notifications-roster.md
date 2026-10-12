@@ -81,9 +81,7 @@ Managers and other teams' players cannot be removed through this route.
 Removed players leave the default roster. **Include removed players** sends
 `includeRemoved=true` to show retained, read-only records. Activate/name editing
 are blocked. The old team ID remains for payment, receipt and attendance foreign
-keys, without granting current access. The unique-email model does not yet offer
-joining another team or restoring a removed account. Use Deactivate for temporary
-absence. Existing records stay available to staff; dues cover the removal month
+keys, without granting current access. See [team memberships](team-memberships.md) for cross-team membership support. Removed memberships are retained and cannot be reused through an invitation. The product does not restore a removed membership. An account with another active membership can join a different team through an invitation. Use Deactivate for temporary absence. Existing records stay available to staff; dues cover the removal month
 and earlier eligible months, with no subsequent dues generated for this membership.
 Removal does not refund payments or cancel provider transactions already created.
 

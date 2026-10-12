@@ -22,6 +22,7 @@ x-app-env: &app-env
   VAPID_SUBJECT: ${VAPID_SUBJECT:-}
   TRUST_PROXY: ${TRUST_PROXY:-}
   LOG_LEVEL: ${LOG_LEVEL:-info}
+  MULTI_TEAM_ENABLED: ${MULTI_TEAM_ENABLED:-false}
 
 services:
   api:

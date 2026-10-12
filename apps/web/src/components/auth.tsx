@@ -42,6 +42,9 @@ export function AuthForm({
   const [name, setName] = useState('');
   const [credential, setCredential] = useState('');
   const [show, setShow] = useState(false);
+  const [loginWithPassword, setLoginWithPassword] = useState(!player);
+  const [joinPin, setJoinPin] = useState('');
+  const [joinPassword, setJoinPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [invite, setInvite] = useState('');
   const [invalidInvite, setInvalidInvite] = useState(false);
@@ -54,7 +57,57 @@ export function AuthForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(0);
+  const [resendDeadline, setResendDeadline] = useState(0);
+  const [waits, setWaits] = useState<Record<string, number>>({});
+  const [throttledAction, setThrottledAction] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const remaining = (deadline: number) => Math.max(0, Math.ceil((deadline - now) / 1000));
+  const cooldown = remaining(resendDeadline);
+  const actionWait = (action: string) => remaining(waits[action] ?? 0);
+  function setCooldown(seconds: number) {
+    setResendDeadline(Date.now() + seconds * 1000);
+    setNow(Date.now());
+  }
+  function failure(e: unknown, action: string) {
+    if (e instanceof RequestError && e.status === 429 && e.retryAfterSeconds) {
+      setWaits((previous) => ({ ...previous, [action]: Date.now() + e.retryAfterSeconds! * 1000 }));
+      setNow(Date.now());
+      setThrottledAction(action);
+      setError(null);
+      if (action === 'resend') setCooldown(e.retryAfterSeconds);
+    } else {
+      setThrottledAction(null);
+      setError((e as Error).message);
+    }
+  }
+  async function checkInvitation(token: string) {
+    setPreviewBusy(true);
+    setPreviewFailed(false);
+    setError(null);
+    setThrottledAction(null);
+    try {
+      const data = await api<{
+        teamName: string;
+        email: string | null;
+        kind: 'MANAGER' | 'PLAYER';
+      }>(`/invitations/preview?token=${encodeURIComponent(token)}`);
+      if (data.kind !== (player ? 'PLAYER' : 'MANAGER')) {
+        setInvalidInvite(true);
+        setError('Open the invitation page for your role, or ask your team for a new link.');
+        return;
+      }
+      setPreview(data);
+      if (data.email) setEmail(data.email);
+    } catch (e) {
+      if (e instanceof RequestError && e.status === 422) setInvalidInvite(true);
+      else setPreviewFailed(true);
+      failure(e, 'preview');
+    } finally {
+      setPreviewBusy(false);
+    }
+  }
   const inviteCaptured = useRef(false);
   const originalInvite = useRef('');
   function verification(address: string, resendAfterSeconds?: number) {
@@ -78,8 +131,8 @@ export function AuthForm({
     setAuthError(null);
     try {
       const session = await api<AuthSession>('/auth/me');
-      setCsrfToken(session.csrfToken);
-      if (mode === 'staff/join') {
+      setCsrfToken(session.csrfToken, session.user.id);
+      if (['staff/join', 'register'].includes(mode) && originalInvite.current) {
         if (!originalInvite.current && session.nextStep !== 'CREATE_TEAM') {
           forgetVerification(session.user.role, session.user.email);
           location.replace(sessionHome(session));
@@ -125,44 +178,57 @@ export function AuthForm({
       setInvite(token);
       if (token) {
         history.replaceState(null, '', '/' + mode);
-        void api<{ teamName: string; email: string | null; kind: 'MANAGER' | 'PLAYER' }>(
-          `/invitations/preview?token=${encodeURIComponent(token)}`,
-        )
-          .then((data) => {
-            if (data.kind !== (player ? 'PLAYER' : 'MANAGER')) {
-              setInvalidInvite(true);
-              setError('Open the invitation page for your role, or ask your team for a new link.');
-              return;
-            }
-            setPreview(data);
-            if (data.email) setEmail(data.email);
-          })
-          .catch((e) => {
-            setInvalidInvite(true);
-            setError((e as Error).message);
-          });
+        void checkInvitation(token);
       }
     }
   }, [mode]);
   useEffect(() => {
-    if (!cooldown) return;
-    const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [cooldown]);
+    if (!resendDeadline && !Object.values(waits).some((deadline) => deadline > Date.now())) return;
+    const update = () => setNow(Date.now());
+    const timer = setInterval(update, 1000);
+    document.addEventListener('visibilitychange', update);
+    window.addEventListener('focus', update);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', update);
+      window.removeEventListener('focus', update);
+    };
+  }, [resendDeadline, waits]);
   async function authenticated(session: AuthSession) {
-    setCsrfToken(session.csrfToken);
+    setCsrfToken(session.csrfToken, session.user.id);
     forgetVerification(session.user.role, session.user.email);
-    if (!player && invite) {
+    if (invite) {
       try {
-        await api('/auth/staff-invitation/accept', { method: 'POST', body: { token: invite } });
+        if (session.memberships || player) {
+          session = await api<AuthSession>('/auth/invitations/accept', {
+            method: 'POST',
+            body: {
+              token: invite,
+              ...(joinPin ? { pin: joinPin } : {}),
+              ...(joinPassword ? { password: joinPassword } : {}),
+            },
+          });
+          setCsrfToken(session.csrfToken, session.user.id);
+        } else {
+          await api('/auth/staff-invitation/accept', { method: 'POST', body: { token: invite } });
+          session = await api<AuthSession>('/auth/me');
+        }
       } catch (e) {
-        if (session.nextStep === 'ACCEPT_INVITATION') {
+        if (
+          e instanceof RequestError &&
+          (e.code === 'PIN_REQUIRED' || e.code === 'PASSWORD_REQUIRED')
+        ) {
+          setExisting(session);
+          setCredential('');
+          setError(e.message);
+          return;
+        }
+        if (!player && session.nextStep === 'ACCEPT_INVITATION') {
           location.assign('/onboarding/staff-invitation');
           return;
         }
         throw e;
       }
-      session = await api<AuthSession>('/auth/me');
     }
     if (onAuthenticated) onAuthenticated(session);
     else {
@@ -179,15 +245,17 @@ export function AuthForm({
   const resetKind = player ? 'pin' : 'password';
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (actionWait(stage) > 0) return;
+    setThrottledAction(null);
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       if (stage === 'login')
         await authenticated(
-          await api<AuthSession>(player ? '/auth/device-login' : '/auth/staff-login', {
+          await api<AuthSession>(loginWithPassword ? '/auth/staff-login' : '/auth/device-login', {
             method: 'POST',
-            body: player ? { email, pin: credential } : { email, password: credential },
+            body: loginWithPassword ? { email, password: credential } : { email, pin: credential },
           }),
         );
       else if (stage === 'register') {
@@ -234,12 +302,25 @@ export function AuthForm({
       ) {
         verification(email);
         setMessage('Your account is saved. Enter your latest email code, or request a new one.');
-      } else setError((e as Error).message);
+      } else if (
+        stage === 'register' &&
+        invite &&
+        e instanceof RequestError &&
+        e.code === 'ACCOUNT_EXISTS'
+      ) {
+        setStage('login');
+        setCredential('');
+        setMessage(
+          'Your account already exists. Sign in to join this team without creating another account.',
+        );
+      } else failure(e, stage);
     } finally {
       setBusy(false);
     }
   }
   async function resend() {
+    if (cooldown > 0 || actionWait('resend') > 0) return;
+    setThrottledAction(null);
     setBusy(true);
     setError(null);
     try {
@@ -251,13 +332,15 @@ export function AuthForm({
       else setCooldown(60);
       setMessage('A new code has been requested. Check your email.');
     } catch (e) {
-      setError((e as Error).message);
+      failure(e, 'resend');
     } finally {
       setBusy(false);
     }
   }
   const needsInvite =
-    stage !== 'verify' && ['register', 'staff/join'].includes(mode) && (!invite || invalidInvite);
+    stage !== 'verify' &&
+    ['register', 'staff/join'].includes(mode) &&
+    (!invite || invalidInvite || previewFailed || previewBusy || !preview);
   return (
     <div className="auth-form">
       <p className="eyebrow">
@@ -290,18 +373,75 @@ export function AuthForm({
               ? 'Enter the six-digit code from your email. You can return here to finish verification.'
               : 'Recover your account with a code sent to your email.'}
       </p>
-      <Feedback error={error ?? authError} success={message} />
+      <Feedback
+        error={
+          throttledAction
+            ? actionWait(throttledAction) > 0
+              ? `Too many attempts. Try again in ${actionWait(throttledAction)}s.`
+              : 'You can try again now.'
+            : (error ?? authError)
+        }
+        success={message}
+      />
+      {previewFailed && !invalidInvite && (
+        <Button
+          variant="secondary"
+          busy={previewBusy}
+          disabled={actionWait('preview') > 0}
+          onClick={() => checkInvitation(invite)}
+        >
+          {actionWait('preview')
+            ? `Retry invitation check in ${actionWait('preview')}s`
+            : 'Retry invitation check'}
+        </Button>
+      )}
       {authError && (
         <Button variant="secondary" onClick={loadAuth}>
           Retry connection
         </Button>
       )}
-      {existing && mode === 'staff/join' ? (
+      {existing && ['staff/join', 'register'].includes(mode) ? (
         <div className="form-stack">
-          <p>Signed in as {existing.user.email}.</p>
+          <p>
+            Signed in as {existing.user.email}. Join {preview?.teamName ?? 'this team'} as{' '}
+            {player ? 'a player' : 'team staff'}.
+          </p>
+          {player &&
+            (existing.hasPlayerPin === false ||
+              (existing.hasPlayerPin === undefined && existing.user.role === 'MANAGER')) && (
+              <Field
+                label="Choose your player PIN"
+                inputMode="numeric"
+                type="password"
+                pattern="[0-9]{4}"
+                maxLength={4}
+                value={joinPin}
+                onChange={(e) => setJoinPin(e.target.value.replace(/\D/g, ''))}
+                required
+              />
+            )}
+          {!player && existing.authMethod === 'PIN' && (
+            <>
+              <Field
+                label="Account password"
+                type="password"
+                value={joinPassword}
+                onChange={(e) => setJoinPassword(e.target.value)}
+              />
+              <Link href="/forgot-password">Set or recover a password through email</Link>
+            </>
+          )}
           <Button
             busy={busy}
-            disabled={!invite || invalidInvite || existing.user.role !== 'MANAGER'}
+            disabled={
+              !invite ||
+              invalidInvite ||
+              previewFailed ||
+              previewBusy ||
+              !preview ||
+              (player && existing.hasPlayerPin === false && joinPin.length !== 4) ||
+              (!player && existing.authMethod === 'PIN' && !joinPassword)
+            }
             onClick={async () => {
               setBusy(true);
               setError(null);
@@ -336,7 +476,13 @@ export function AuthForm({
           </Button>
         </div>
       ) : needsInvite ? (
-        <div className="notice">Ask your coach or manager for a new invitation link.</div>
+        <div className="notice">
+          {previewBusy
+            ? 'Checking your invitation…'
+            : previewFailed
+              ? 'Retry checking your invitation to continue.'
+              : 'Ask your coach or manager for a new invitation link.'}
+        </div>
       ) : (
         <form onSubmit={submit} className="form-stack">
           {stage === 'register' && (
@@ -376,7 +522,7 @@ export function AuthForm({
             <>
               <Field
                 label={
-                  player
+                  (stage === 'login' ? !loginWithPassword : player)
                     ? stage === 'login'
                       ? 'Four-digit PIN'
                       : 'Choose a four-digit PIN'
@@ -385,14 +531,28 @@ export function AuthForm({
                       : 'Choose a password'
                 }
                 type={show ? 'text' : 'password'}
-                inputMode={player ? 'numeric' : undefined}
+                inputMode={
+                  (stage === 'login' ? !loginWithPassword : player) ? 'numeric' : undefined
+                }
                 autoComplete={stage === 'login' ? 'current-password' : 'new-password'}
-                pattern={player ? '[0-9]{4}' : stage === 'login' ? undefined : PASSWORD_PATTERN}
-                minLength={player ? 4 : stage === 'login' ? 1 : 8}
-                maxLength={player ? 4 : 128}
+                pattern={
+                  stage === 'login'
+                    ? loginWithPassword
+                      ? undefined
+                      : '[0-9]{4}'
+                    : player
+                      ? '[0-9]{4}'
+                      : PASSWORD_PATTERN
+                }
+                minLength={stage === 'login' ? (loginWithPassword ? 1 : 4) : player ? 4 : 8}
+                maxLength={(stage === 'login' ? !loginWithPassword : player) ? 4 : 128}
                 value={credential}
                 onChange={(e) =>
-                  setCredential(player ? e.target.value.replace(/\D/g, '') : e.target.value)
+                  setCredential(
+                    (stage === 'login' ? !loginWithPassword : player)
+                      ? e.target.value.replace(/\D/g, '')
+                      : e.target.value,
+                  )
                 }
                 help={
                   !player && stage !== 'login'
@@ -407,16 +567,36 @@ export function AuthForm({
                 aria-pressed={show}
                 onClick={() => setShow(!show)}
               >
-                {show ? 'Hide' : 'Show'} {player ? 'PIN' : 'password'}
+                {show ? 'Hide' : 'Show'}{' '}
+                {(stage === 'login' ? !loginWithPassword : player) ? 'PIN' : 'password'}
               </button>
             </>
           )}
+          {stage === 'login' && invite && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setLoginWithPassword(!loginWithPassword);
+                setCredential('');
+              }}
+            >
+              {loginWithPassword ? 'Use player PIN instead' : 'Use account password instead'}
+            </Button>
+          )}
           {stage === 'login' && (
-            <Link className="form-link" href={player ? '/reset-pin' : '/forgot-password'}>
-              Forgot your {resetKind}?
+            <Link
+              className="form-link"
+              href={loginWithPassword ? '/forgot-password' : '/reset-pin'}
+            >
+              Forgot your {loginWithPassword ? 'password' : 'PIN'}?
             </Link>
           )}
-          <Button type="submit" busy={busy} disabled={!authLoaded || !!authError}>
+          <Button
+            type="submit"
+            busy={busy}
+            disabled={!authLoaded || !!authError || actionWait(stage) > 0}
+          >
             {stage === 'login'
               ? 'Sign in'
               : stage === 'register'

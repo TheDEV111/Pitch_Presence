@@ -89,7 +89,7 @@ async function createStaff(email = `${randomUUID()}@test.com`) {
   });
 }
 async function otp(email: string, purpose = 'VERIFY_EMAIL') {
-  const user = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+  const user = await fixture.db.user.findFirstOrThrow({ where: { email } });
   const job = await fixture.db.backgroundJob.findFirstOrThrow({
     where: { kind: 'EMAIL_OTP', deduplicationKey: { startsWith: 'otp:' } },
     orderBy: { createdAt: 'desc' },
@@ -175,7 +175,7 @@ describe('staff onboarding and recovery', () => {
       (await request('POST', '/auth/staff-register', { name: 'New coach', email, password }))
         .statusCode,
     ).toBe(200);
-    user = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    user = await fixture.db.user.findFirstOrThrow({ where: { email } });
     expect(user.role).toBe('MANAGER');
     expect(user.teamId).toBeNull();
     expect(user.pinHash).toBeNull();
@@ -190,7 +190,7 @@ describe('staff onboarding and recovery', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().nextStep).toBe('CREATE_TEAM');
     expect(response.json().team).toBeNull();
-    user = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    user = await fixture.db.user.findFirstOrThrow({ where: { email } });
     session = await backend.services.auth.createSession(user);
   });
   it('resumes team onboarding on another device and gates operational routes', async () => {
@@ -274,7 +274,7 @@ describe('interrupted staff signup', () => {
       invitationToken: new URL(invite.registrationUrl).searchParams.get('invite')!,
     };
     expect((await request('POST', '/auth/staff-register', input)).statusCode).toBe(200);
-    const before = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    const before = await fixture.db.user.findFirstOrThrow({ where: { email } });
     const code = await otp(email);
     const response = await request('POST', '/auth/staff-register', {
       name: 'Changed name',
@@ -283,7 +283,7 @@ describe('interrupted staff signup', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().resendAfterSeconds).toBeGreaterThan(0);
-    expect(await fixture.db.user.findUniqueOrThrow({ where: { email } })).toEqual(before);
+    expect(await fixture.db.user.findFirstOrThrow({ where: { email } })).toEqual(before);
     expect(await fixture.db.verificationToken.count({ where: { userId: before.id } })).toBe(1);
     expect(
       await fixture.db.backgroundJob.count({
@@ -297,7 +297,7 @@ describe('interrupted staff signup', () => {
   it('rejects changed passwords, verified accounts and player credentials without modifying them', async () => {
     const email = `${randomUUID()}@test.com`;
     await request('POST', '/auth/staff-register', { name: 'Coach', email, password });
-    const before = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    const before = await fixture.db.user.findFirstOrThrow({ where: { email } });
     for (const input of [
       { email, password: 'AnotherPass123!' },
       { email: a.email, password },
@@ -310,13 +310,13 @@ describe('interrupted staff signup', () => {
       expect(response.statusCode).toBe(409);
       expect(response.json().error.code).toBe('ACCOUNT_EXISTS');
     }
-    expect(await fixture.db.user.findUniqueOrThrow({ where: { email } })).toEqual(before);
+    expect(await fixture.db.user.findFirstOrThrow({ where: { email } })).toEqual(before);
   });
   it('replaces an expired code on signup retry and rejects the old challenge', async () => {
     const email = `${randomUUID()}@test.com`;
     const input = { name: 'Returning coach', email, password };
     await request('POST', '/auth/staff-register', input);
-    const user = await fixture.db.user.findUniqueOrThrow({ where: { email } });
+    const user = await fixture.db.user.findFirstOrThrow({ where: { email } });
     const challenge = await fixture.db.verificationToken.findFirstOrThrow({
       where: { userId: user.id },
     });
@@ -380,7 +380,7 @@ describe('interrupted staff signup', () => {
         password,
       });
       expect(response.statusCode).toBe(500);
-      expect(await fixture.db.user.findUnique({ where: { email } })).toBeNull();
+      expect(await fixture.db.user.findFirst({ where: { email } })).toBeNull();
       expect(
         await fixture.db.backgroundJob.count({
           where: { payload: { path: ['email'], equals: email } },
@@ -459,7 +459,7 @@ describe('email-bound staff invitations', () => {
     const result = await request('POST', '/auth/verify-email', { email, otp: await otp(email) });
     expect(result.json().nextStep).toBe('ACCEPT_INVITATION');
     invitedSession = await backend.services.auth.createSession(
-      await fixture.db.user.findUniqueOrThrow({ where: { email } }),
+      await fixture.db.user.findFirstOrThrow({ where: { email } }),
     );
     expect(
       (await request('POST', '/teams', { name: 'Bypass invite' }, invitedSession)).statusCode,
@@ -523,7 +523,7 @@ describe('email-bound staff invitations', () => {
         ).statusCode,
       ).toBe(200);
       expect(
-        (await fixture.db.user.findUniqueOrThrow({ where: { email: playerEmail } })).teamId,
+        (await fixture.db.user.findFirstOrThrow({ where: { email: playerEmail } })).teamId,
       ).toBe(b.teamId);
     }
     expect(
