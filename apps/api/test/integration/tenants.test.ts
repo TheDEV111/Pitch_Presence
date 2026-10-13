@@ -546,7 +546,11 @@ describe('team isolation and dashboard counts', () => {
         .json()
         .players.map((p: { playerId: string }) => p.playerId),
     ).toEqual([pa.id]);
-    expect((await request('POST', '/training-sessions', trainingInput(), sa)).statusCode).toBe(409);
+    const conflict = await request('POST', '/training-sessions', trainingInput(), sa);
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json().error.code).toBe('SESSION_ALREADY_OPEN');
+    expect(conflict.json().error.message).toContain(ar.json().name);
+    expect(conflict.json().error.message).toContain('close it before starting another');
   });
   it('rejects foreign session identifiers, roster changes, and QR tokens', async () => {
     for (const suffix of ['', '/attendance'])

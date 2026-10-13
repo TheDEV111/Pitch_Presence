@@ -49,6 +49,14 @@ If a fault appears, disable additional joins and use a compatible forward fix. D
 
 ## Validation
 
+### Reopening invitations and conflicts
+
+Invitation previews include `teamId` so the signed-in frontend can compare the target against the account's memberships. An existing member sees “This account is already part of [team]” and a workspace link rather than another acceptance button. If another team is selected, the screen explains how to use Switch team; the existing password requirement for staff workspaces still applies.
+
+Backend acceptance remains idempotent for a valid invitation matching an active existing role. A conflicting role returns `409 MEMBERSHIP_EXISTS` with the team name and guidance to contact the manager. Removed and inactive memberships return `403 MEMBERSHIP_REMOVED` and `403 MEMBERSHIP_INACTIVE`, respectively; an invitation cannot restore their access. Failed acceptance leaves the current session valid.
+
+A missing acceptance route is presented as a server deployment problem, rather than an account conflict. Deploy the backend containing `/api/v1/auth/invitations/accept` before relying on the multi-team frontend. An open training session returns `409 SESSION_ALREADY_OPEN` with instructions to continue or close it; the training page reloads the current session so its existing navigation becomes available. Generic uniqueness conflicts no longer claim that a session is open.
+
 Run `npm run db:generate`, `npm run test`, `npm run typecheck`, `npm run lint`, `npm run format:check`, and `npm run build`. Run `npm run test:web` after a production frontend build in an environment that permits the local preview server.
 
 Integration coverage includes dual-role membership, existing-account conflicts, authenticated invitation retries, PIN privilege isolation, password recovery before staff acceptance, cross-account switching denial, scoped removal, stale-tab protection and a pre-existing-data migration. Embedded PostgreSQL verifies SQL and transactions; the real multi-connection concurrency suite requires an isolated `TEST_DATABASE_URL`.

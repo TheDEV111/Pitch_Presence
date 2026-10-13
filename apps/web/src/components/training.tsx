@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import QRCode from 'qrcode';
 import { Check, MapPin, Maximize2, ScanLine } from 'lucide-react';
 import type { TrainingResponse, UserResponse } from '@pitchpresence/shared';
-import { api } from '@/lib/api';
+import { api, RequestError } from '@/lib/api';
 import { dateLabel, monthLabel } from '@/lib/format';
 import type { Roster } from '@/lib/types';
 import { useResource, useCollection } from './data';
@@ -171,6 +171,7 @@ export function Training() {
           ? e.message
           : 'Location could not be captured. Allow location access and try again.',
       );
+      if (e instanceof RequestError && e.code === 'SESSION_ALREADY_OPEN') await reload();
     } finally {
       setBusy(false);
     }

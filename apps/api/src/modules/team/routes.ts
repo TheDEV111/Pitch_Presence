@@ -50,9 +50,15 @@ export function teamRoutes(r: Router, service: TeamService) {
       );
       const team = await r.db.team.findUniqueOrThrow({
         where: { id: row.teamId },
-        select: { name: true },
+        select: { id: true, name: true },
       });
-      return { kind: row.kind, email: row.email, teamName: team.name, expiresAt: row.expiresAt };
+      return {
+        kind: row.kind,
+        email: row.email,
+        teamId: team.id,
+        teamName: team.name,
+        expiresAt: row.expiresAt,
+      };
     },
     { access: 'public', query: true },
   );

@@ -276,6 +276,19 @@ export class AuthService {
       const previous = await tx.user.findUnique({
         where: { accountId_teamId: { accountId: user.accountId, teamId: current.teamId } },
       });
+      const team = await tx.team.findUniqueOrThrow({ where: { id: current.teamId } });
+      requireRule(
+        !previous?.removedAt,
+        403,
+        'MEMBERSHIP_REMOVED',
+        `You were removed from ${team.name}. Contact the team manager to request access again.`,
+      );
+      requireRule(
+        !previous || previous.active,
+        403,
+        'MEMBERSHIP_INACTIVE',
+        `Your membership in ${team.name} is inactive. Contact the team manager to restore access.`,
+      );
       if (
         previous &&
         current.kind === previous.role &&
@@ -290,7 +303,7 @@ export class AuthService {
         !previous,
         409,
         'MEMBERSHIP_EXISTS',
-        'This account already has a membership in this team. Contact the team manager.',
+        `This account is already part of ${team.name}. Open your existing team workspace. Contact the team manager if your role needs to change.`,
       );
       requireRule(
         !current.revokedAt && !current.acceptedAt && current.expiresAt > new Date(),

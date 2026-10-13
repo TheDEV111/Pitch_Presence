@@ -57,7 +57,10 @@ async function mock(
     team: current.role === 'MANAGER' ? teamA : teamB,
     authMethod: method,
     hasPlayerPin: !options.joining || current.role === 'PLAYER',
-    memberships: options.single ? [memberships[0]] : memberships,
+    memberships:
+      options.single || (options.joining && current.role === 'MANAGER')
+        ? [memberships[0]]
+        : memberships,
     csrfToken: 'csrf-memberships',
     nextStep: 'READY',
     pendingInvitation: null,
@@ -66,7 +69,9 @@ async function mock(
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/auth/me')) return route.fulfill({ json: context() });
     if (path.endsWith('/invitations/preview'))
-      return route.fulfill({ json: { teamName: teamB.name, kind: 'PLAYER', email: null } });
+      return route.fulfill({
+        json: { teamId: teamB.id, teamName: teamB.name, kind: 'PLAYER', email: null },
+      });
     if (path.endsWith('/auth/invitations/accept')) {
       const body = route.request().postDataJSON();
       writes.push(body);
@@ -125,6 +130,81 @@ test('switching from player to staff requires a password and reloads the correct
   await page.getByRole('button', { name: 'Open team', exact: true }).click();
   await expect(page).toHaveURL(/\/management$/);
   expect(writes).toEqual([{ membershipId: staff.id, password: 'CoachPass123!' }]);
+});
+test('an existing team member sees their team name without another acceptance request', async ({
+  page,
+}) => {
+  const writes = await mock(page, { pin: true });
+  await page.goto('/register?invite=already-joined-team-invitation');
+  await expect(page.getByRole('status')).toContainText(
+    'This account is already part of Training FC.',
+  );
+  await expect(
+    page.getByRole('button', { name: 'Accept invitation', exact: true }),
+  ).not.toBeVisible();
+  await page.getByRole('link', { name: 'Go to my workspace' }).click();
+  await expect(page).toHaveURL(/\/home$/);
+  expect(writes).toHaveLength(0);
+});
+test('an existing membership in another workspace guides the user to switch teams', async ({
+  page,
+}) => {
+  const writes = await mock(page);
+  await page.goto('/register?invite=already-joined-team-invitation');
+  await expect(page.getByRole('status')).toContainText(
+    'This account is already part of Training FC.',
+  );
+  await expect(
+    page.getByText('Open your workspace and use Switch team to select this team.'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Accept invitation', exact: true }),
+  ).not.toBeVisible();
+  expect(writes).toHaveLength(0);
+});
+test('a removed membership explains why the invitation cannot restore access', async ({ page }) => {
+  const writes = await mock(page);
+  await page.route('**/api/v1/auth/me', (route) =>
+    route.fulfill({
+      json: {
+        user: staff,
+        team: teamA,
+        csrfToken: 'csrf-memberships',
+        nextStep: 'READY',
+        pendingInvitation: null,
+        memberships: [
+          memberships[0],
+          { ...memberships[1], active: false, removedAt: teamA.createdAt },
+        ],
+      },
+    }),
+  );
+  await page.goto('/register?invite=removed-team-invitation');
+  await expect(page.getByRole('status')).toContainText('You were removed from Training FC.');
+  await expect(
+    page.getByRole('button', { name: 'Accept invitation', exact: true }),
+  ).not.toBeVisible();
+  expect(writes).toHaveLength(0);
+});
+test('a missing acceptance route explains the deployment problem without claiming a duplicate account', async ({
+  page,
+}) => {
+  await mock(page, { joining: true });
+  await page.route('**/api/v1/auth/invitations/accept', (route) =>
+    route.fulfill({
+      status: 404,
+      json: { error: { code: 'NOT_FOUND', message: 'Route not found.' } },
+    }),
+  );
+  await page.goto('/register?invite=existing-account-player-invitation');
+  await page.getByLabel('Choose your player PIN').fill('2468');
+  await page.getByRole('button', { name: 'Accept invitation', exact: true }).click();
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'Team invitation acceptance is unavailable on the server.' }),
+  ).toBeVisible();
+  await expect(page.getByText('Signed in as henry@example.test.', { exact: false })).toBeVisible();
 });
 test('a stale tab shows a reload screen instead of silently using another team', async ({
   page,
