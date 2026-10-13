@@ -485,9 +485,17 @@ test('login throttling keeps credentials and requires a manual retry after the w
   await page.getByLabel('Password', { exact: true }).fill('CoachPass123!');
   const button = page.getByRole('button', { name: 'Sign in', exact: true });
   await button.click();
+  // Disabled also means the request is pending; wait for the actual server countdown.
+  await expect(page.getByText('Too many attempts. Try again in 3s.')).toBeVisible();
   await expect(button).toBeDisabled();
   await expect(page.getByLabel('Password', { exact: true })).toHaveValue('CoachPass123!');
-  await page.clock.fastForward(4000);
+  await page.clock.runFor(2000);
+  await expect(page.getByText('Too many attempts. Try again in 1s.')).toBeVisible();
+  await expect(button).toBeDisabled();
+  await page.clock.runFor(2000);
   await expect(button).toBeEnabled();
   expect(attempts).toBe(1);
+  await button.click();
+  await expect.poll(() => attempts).toBe(2);
+  await expect(page.getByText('Too many attempts. Try again in 3s.')).toBeVisible();
 });
