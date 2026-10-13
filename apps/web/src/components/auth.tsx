@@ -56,6 +56,7 @@ export function AuthForm({
     kind: 'MANAGER' | 'PLAYER';
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [resendDeadline, setResendDeadline] = useState(0);
@@ -204,10 +205,10 @@ export function AuthForm({
       window.removeEventListener('focus', update);
     };
   }, [resendDeadline, waits]);
-  async function authenticated(session: AuthSession) {
+  async function authenticated(session: AuthSession, acceptInvite = true) {
     setCsrfToken(session.csrfToken, session.user.id);
     forgetVerification(session.user.role, session.user.email);
-    if (invite) {
+    if (invite && acceptInvite) {
       if (
         preview?.teamId &&
         (session.user.teamId === preview.teamId ||
@@ -268,7 +269,8 @@ export function AuthForm({
   const resetKind = player ? 'pin' : 'password';
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (actionWait(stage) > 0) return;
+    if (submitting.current || busy || actionWait(stage) > 0) return;
+    submitting.current = true;
     setThrottledAction(null);
     setBusy(true);
     setError(null);
@@ -298,11 +300,35 @@ export function AuthForm({
         );
         verification(email, result.resendAfterSeconds ?? 60);
         setMessage(result.message);
-      } else if (stage === 'verify')
-        await authenticated(
-          await api<AuthSession>('/auth/verify-email', { method: 'POST', body: { email, otp } }),
-        );
-      else if (stage === 'request') {
+      } else if (stage === 'verify') {
+        let session: AuthSession;
+        try {
+          session = await api<AuthSession>('/auth/verify-email', {
+            method: 'POST',
+            body: { email, otp },
+          });
+        } catch (verificationError) {
+          // A consumed code or lost response can follow successful verification on this device.
+          // Only the server's matching, verified session can establish that success.
+          if (
+            !(verificationError instanceof RequestError) ||
+            (verificationError.code !== 'OTP_INVALID' && verificationError.status !== 0)
+          )
+            throw verificationError;
+          const recovered = await api<AuthSession>('/auth/me').catch(() => null);
+          if (
+            !recovered ||
+            !recovered.user.isVerified ||
+            !recovered.user.active ||
+            recovered.user.email.toLowerCase() !== email.trim().toLowerCase() ||
+            recovered.user.role !== (player ? 'PLAYER' : 'MANAGER')
+          )
+            throw verificationError;
+          session = recovered;
+        }
+        // Player registration already creates the invited membership before email verification.
+        await authenticated(session, !(player && mode === 'register'));
+      } else if (stage === 'request') {
         await api(`/auth/${resetKind}-reset/request`, { method: 'POST', body: { email } });
         setStage('reset');
         setCooldown(60);
@@ -338,6 +364,7 @@ export function AuthForm({
         );
       } else failure(e, stage);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }

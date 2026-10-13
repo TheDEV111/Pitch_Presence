@@ -186,10 +186,25 @@ describe('staff onboarding and recovery', () => {
     expect(
       (await request('POST', '/auth/staff-login', { email, password: 'wrong' })).statusCode,
     ).toBe(401);
-    const response = await request('POST', '/auth/verify-email', { email, otp: await otp(email) });
+    const code = await otp(email);
+    const invalid = await request('POST', '/auth/verify-email', {
+      email,
+      otp: code === '000000' ? '111111' : '000000',
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json().error.code).toBe('OTP_INVALID');
+    expect(invalid.cookies).toHaveLength(0);
+    expect((await fixture.db.user.findFirstOrThrow({ where: { email } })).isVerified).toBe(false);
+    expect(await fixture.db.deviceSession.count({ where: { userId: user.id } })).toBe(0);
+    expect((await request('POST', '/auth/staff-login', { email, password })).statusCode).toBe(403);
+    const response = await request('POST', '/auth/verify-email', { email, otp: code });
     expect(response.statusCode).toBe(200);
     expect(response.json().nextStep).toBe('CREATE_TEAM');
     expect(response.json().team).toBeNull();
+    const repeated = await request('POST', '/auth/verify-email', { email, otp: code });
+    expect(repeated.statusCode).toBe(422);
+    expect(repeated.json().error.code).toBe('OTP_INVALID');
+    expect(await fixture.db.deviceSession.count({ where: { userId: user.id } })).toBe(1);
     user = await fixture.db.user.findFirstOrThrow({ where: { email } });
     session = await backend.services.auth.createSession(user);
   });

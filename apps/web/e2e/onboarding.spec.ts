@@ -139,6 +139,100 @@ async function signup(page: Page, invited = false) {
 const clockStart = new Date('2026-10-13T12:00:00Z');
 const clockPause = new Date('2026-10-13T13:00:00Z');
 
+for (const failure of ['consumed-code', 'lost-response', 'invalid-code', 'different-account']) {
+  test(`verification recovery handles ${failure} using the server session`, async ({ page }) => {
+    const state = await mockOnboarding(page);
+    await page.route('**/api/v1/auth/verify-email', async (route) => {
+      state.verified = failure !== 'invalid-code';
+      if (failure === 'different-account') {
+        await page.route('**/api/v1/auth/me', (me) =>
+          me.fulfill({
+            json: {
+              user: { ...coach, email: 'someone-else@example.test' },
+              csrfToken: 'csrf-other',
+              team: null,
+              nextStep: 'CREATE_TEAM',
+            },
+          }),
+        );
+      }
+      if (failure === 'lost-response') return route.abort();
+      return route.fulfill({
+        status: 422,
+        json: { error: { code: 'OTP_INVALID', message: 'The code is invalid or expired.' } },
+      });
+    });
+    await page.goto('/signup');
+    await signup(page);
+    await page.getByLabel('Six-digit email code').fill('012345');
+    await page.getByRole('button', { name: 'Verify email', exact: true }).click();
+    if (failure === 'consumed-code' || failure === 'lost-response') {
+      await expect(page).toHaveURL(/\/onboarding\/team$/);
+    } else {
+      await expect(
+        page.getByRole('alert').filter({ hasText: 'The code is invalid or expired.' }),
+      ).toBeVisible();
+      await expect(page.getByLabel('Six-digit email code')).toBeVisible();
+    }
+  });
+}
+
+test('player verification submits once and opens the registered team without accepting again', async ({
+  page,
+}) => {
+  let verified = false;
+  let verificationRequests = 0;
+  let acceptanceRequests = 0;
+  let releaseVerification!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    releaseVerification = resolve;
+  });
+  const context = {
+    user: { ...coach, role: 'PLAYER', teamId: team.id },
+    team,
+    csrfToken: 'csrf-player',
+    nextStep: 'READY',
+  };
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/auth/me'))
+      return route.fulfill({
+        status: verified ? 200 : 401,
+        json: verified ? context : { error: { code: 'AUTH_REQUIRED', message: 'Sign in.' } },
+      });
+    if (path.endsWith('/invitations/preview'))
+      return route.fulfill({
+        json: { teamId: team.id, teamName: team.name, kind: 'PLAYER', email: null },
+      });
+    if (path.endsWith('/auth/register'))
+      return route.fulfill({ json: { message: 'Check your email.', resendAfterSeconds: 60 } });
+    if (path.endsWith('/auth/verify-email')) {
+      verificationRequests++;
+      await pending;
+      verified = true;
+      return route.fulfill({ json: context });
+    }
+    if (path.endsWith('/auth/invitations/accept')) acceptanceRequests++;
+    return route.fulfill({ json: { items: [], nextCursor: null } });
+  });
+  await page.goto('/register?invite=player-registration-invitation');
+  await page.getByLabel('Your name').fill('Player');
+  await page.getByLabel('Email address').fill(coach.email);
+  await page.getByLabel('Choose a four-digit PIN').fill('2468');
+  await page.getByRole('button', { name: 'Create player account', exact: true }).click();
+  await page.getByLabel('Six-digit email code').fill('012345');
+  await page.getByLabel('Six-digit email code').evaluate((input) => {
+    const form = (input as HTMLInputElement).form!;
+    form.requestSubmit();
+    form.requestSubmit();
+  });
+  await expect.poll(() => verificationRequests).toBe(1);
+  releaseVerification();
+  await expect(page).toHaveURL(/\/home$/);
+  expect(verificationRequests).toBe(1);
+  expect(acceptanceRequests).toBe(0);
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://images.pexels.com/**', (route) => route.abort());
   await page.route('https://fonts.googleapis.com/**', (route) => route.abort());
