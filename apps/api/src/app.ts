@@ -126,7 +126,10 @@ export async function buildApp(
           error.meta?.target && String(error.meta.target).includes('one_open_session')
             ? 'SESSION_ALREADY_OPEN'
             : 'ALREADY_EXISTS';
-        message = 'This record already exists or a session is already open.';
+        message =
+          code === 'SESSION_ALREADY_OPEN'
+            ? 'Your team already has an open training session. Open the existing session, or close it before starting another.'
+            : 'This record already exists. Refresh the page to view it before trying again.';
       }
       if (error.code === 'P2025') {
         status = 404;

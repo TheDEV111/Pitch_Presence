@@ -50,11 +50,13 @@ export function AuthForm({
   const [invalidInvite, setInvalidInvite] = useState(false);
   const [existing, setExisting] = useState<AuthSession | null>(null);
   const [preview, setPreview] = useState<{
+    teamId?: string;
     teamName: string;
     email: string | null;
     kind: 'MANAGER' | 'PLAYER';
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [resendDeadline, setResendDeadline] = useState(0);
@@ -66,6 +68,14 @@ export function AuthForm({
   const remaining = (deadline: number) => Math.max(0, Math.ceil((deadline - now) / 1000));
   const cooldown = remaining(resendDeadline);
   const actionWait = (action: string) => remaining(waits[action] ?? 0);
+  const invitedMembership = preview?.teamId
+    ? existing?.memberships?.find((membership) => membership.teamId === preview.teamId)
+    : undefined;
+  const alreadyMember =
+    invitedMembership ??
+    (preview?.teamId && existing?.user.teamId === preview.teamId
+      ? { active: existing.user.active, removedAt: existing.user.removedAt }
+      : undefined);
   function setCooldown(seconds: number) {
     setResendDeadline(Date.now() + seconds * 1000);
     setNow(Date.now());
@@ -89,6 +99,7 @@ export function AuthForm({
     setThrottledAction(null);
     try {
       const data = await api<{
+        teamId?: string;
         teamName: string;
         email: string | null;
         kind: 'MANAGER' | 'PLAYER';
@@ -194,10 +205,18 @@ export function AuthForm({
       window.removeEventListener('focus', update);
     };
   }, [resendDeadline, waits]);
-  async function authenticated(session: AuthSession) {
+  async function authenticated(session: AuthSession, acceptInvite = true) {
     setCsrfToken(session.csrfToken, session.user.id);
     forgetVerification(session.user.role, session.user.email);
-    if (invite) {
+    if (invite && acceptInvite) {
+      if (
+        preview?.teamId &&
+        (session.user.teamId === preview.teamId ||
+          session.memberships?.some((membership) => membership.teamId === preview.teamId))
+      ) {
+        setExisting(session);
+        return;
+      }
       try {
         if (session.memberships || player) {
           session = await api<AuthSession>('/auth/invitations/accept', {
@@ -214,6 +233,11 @@ export function AuthForm({
           session = await api<AuthSession>('/auth/me');
         }
       } catch (e) {
+        if (e instanceof RequestError && e.status === 404) {
+          throw new Error(
+            'Team invitation acceptance is unavailable on the server. Your team membership has not been changed. Ask the app administrator to check the backend deployment.',
+          );
+        }
         if (
           e instanceof RequestError &&
           (e.code === 'PIN_REQUIRED' || e.code === 'PASSWORD_REQUIRED')
@@ -245,7 +269,8 @@ export function AuthForm({
   const resetKind = player ? 'pin' : 'password';
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (actionWait(stage) > 0) return;
+    if (submitting.current || busy || actionWait(stage) > 0) return;
+    submitting.current = true;
     setThrottledAction(null);
     setBusy(true);
     setError(null);
@@ -275,11 +300,35 @@ export function AuthForm({
         );
         verification(email, result.resendAfterSeconds ?? 60);
         setMessage(result.message);
-      } else if (stage === 'verify')
-        await authenticated(
-          await api<AuthSession>('/auth/verify-email', { method: 'POST', body: { email, otp } }),
-        );
-      else if (stage === 'request') {
+      } else if (stage === 'verify') {
+        let session: AuthSession;
+        try {
+          session = await api<AuthSession>('/auth/verify-email', {
+            method: 'POST',
+            body: { email, otp },
+          });
+        } catch (verificationError) {
+          // A consumed code or lost response can follow successful verification on this device.
+          // Only the server's matching, verified session can establish that success.
+          if (
+            !(verificationError instanceof RequestError) ||
+            (verificationError.code !== 'OTP_INVALID' && verificationError.status !== 0)
+          )
+            throw verificationError;
+          const recovered = await api<AuthSession>('/auth/me').catch(() => null);
+          if (
+            !recovered ||
+            !recovered.user.isVerified ||
+            !recovered.user.active ||
+            recovered.user.email.toLowerCase() !== email.trim().toLowerCase() ||
+            recovered.user.role !== (player ? 'PLAYER' : 'MANAGER')
+          )
+            throw verificationError;
+          session = recovered;
+        }
+        // Player registration already creates the invited membership before email verification.
+        await authenticated(session, !(player && mode === 'register'));
+      } else if (stage === 'request') {
         await api(`/auth/${resetKind}-reset/request`, { method: 'POST', body: { email } });
         setStage('reset');
         setCooldown(60);
@@ -315,6 +364,7 @@ export function AuthForm({
         );
       } else failure(e, stage);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -400,7 +450,27 @@ export function AuthForm({
           Retry connection
         </Button>
       )}
-      {existing && ['staff/join', 'register'].includes(mode) ? (
+      {existing && alreadyMember && ['staff/join', 'register'].includes(mode) ? (
+        <div className="form-stack">
+          <p role="status">
+            {alreadyMember.removedAt
+              ? `You were removed from ${preview?.teamName}. Contact the team manager to request access again.`
+              : !alreadyMember.active
+                ? `Your membership in ${preview?.teamName} is inactive. Contact the team manager to restore access.`
+                : `This account is already part of ${preview?.teamName}. You do not need to accept this invitation again.`}
+          </p>
+          {alreadyMember.active && !alreadyMember.removedAt && (
+            <p>
+              {existing.user.teamId === preview?.teamId
+                ? 'Continue in your existing team workspace.'
+                : 'Open your workspace and use Switch team to select this team.'}
+            </p>
+          )}
+          <Link className="button primary" href={sessionHome(existing)}>
+            Go to my workspace
+          </Link>
+        </div>
+      ) : existing && ['staff/join', 'register'].includes(mode) ? (
         <div className="form-stack">
           <p>
             Signed in as {existing.user.email}. Join {preview?.teamName ?? 'this team'} as{' '}

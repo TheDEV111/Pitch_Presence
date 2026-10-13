@@ -110,6 +110,53 @@ afterAll(async () => {
 });
 let player: User;
 let playerSession: Session;
+it('returns a named membership conflict without changing roles or revoking the current session', async () => {
+  const token = await invitation(coach, 'PLAYER');
+  const session = await backend.services.auth.createSession(coach);
+  const preview = await request('GET', `/invitations/preview?token=${token}`);
+  expect(preview.json().teamId).toBe(coach.teamId);
+  const result = await request('POST', '/auth/invitations/accept', { token }, session);
+  expect(result.statusCode, result.body).toBe(409);
+  expect(result.json().error.code).toBe('MEMBERSHIP_EXISTS');
+  expect(result.json().error.message).toContain('This account is already part of Test Team.');
+  expect((await request('GET', '/auth/me', undefined, session)).statusCode).toBe(200);
+  expect((await fixture.db.user.findUniqueOrThrow({ where: { id: coach.id } })).role).toBe(
+    'MANAGER',
+  );
+});
+it('does not restore removed or inactive memberships through an invitation', async () => {
+  const session = await backend.services.auth.createSession(coach);
+  const token = await invitation(other, 'PLAYER');
+  const pinHash = await argon2.hash('2468');
+  await fixture.db.account.update({ where: { id: coach.accountId }, data: { pinHash } });
+  const member = await fixture.db.user.create({
+    data: {
+      accountId: coach.accountId,
+      email: coach.email,
+      name: coach.name,
+      teamId: other.teamId,
+      role: 'PLAYER',
+      pinHash,
+      isVerified: true,
+      active: false,
+      removedAt: new Date(),
+    },
+  });
+  try {
+    const removed = await request('POST', '/auth/invitations/accept', { token }, session);
+    expect(removed.statusCode, removed.body).toBe(403);
+    expect(removed.json().error.code).toBe('MEMBERSHIP_REMOVED');
+    expect(removed.json().error.message).toContain('You were removed from Test Team.');
+    await fixture.db.user.update({ where: { id: member.id }, data: { removedAt: null } });
+    const inactive = await request('POST', '/auth/invitations/accept', { token }, session);
+    expect(inactive.statusCode, inactive.body).toBe(403);
+    expect(inactive.json().error.code).toBe('MEMBERSHIP_INACTIVE');
+    expect(inactive.json().error.message).toContain('Your membership in Test Team is inactive.');
+  } finally {
+    await fixture.db.user.delete({ where: { id: member.id } });
+    await fixture.db.account.update({ where: { id: coach.accountId }, data: { pinHash: null } });
+  }
+});
 it('joins another team as a player with one identity and preserved original membership', async () => {
   const original = await fixture.db.user.findUniqueOrThrow({ where: { id: coach.id } });
   const token = await invitation(other, 'PLAYER');

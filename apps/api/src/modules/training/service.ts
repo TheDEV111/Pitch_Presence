@@ -23,11 +23,12 @@ export class TrainingService {
     );
     try {
       return await this.db.$transaction(async (tx) => {
+        const open = await tx.trainingSession.findFirst({ where: { teamId, status: 'OPEN' } });
         requireRule(
-          !(await tx.trainingSession.findFirst({ where: { teamId, status: 'OPEN' } })),
+          !open,
           409,
           'SESSION_ALREADY_OPEN',
-          'An attendance session is already open.',
+          `Training session "${open?.name}" is already open for your team. Open it to continue attendance, or close it before starting another.`,
         );
         const session = await tx.trainingSession.create({
           data: {
@@ -56,7 +57,11 @@ export class TrainingService {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
-        throw new AppError(409, 'SESSION_ALREADY_OPEN', 'An attendance session is already open.');
+        throw new AppError(
+          409,
+          'SESSION_ALREADY_OPEN',
+          'Your team already has an open training session. Open the existing session, or close it before starting another.',
+        );
       throw error;
     }
   }
