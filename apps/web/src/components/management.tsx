@@ -10,6 +10,7 @@ import { useCollection, useResource } from './data';
 import { ReceiptReview } from './manual-payments';
 import { ReceiptNotifications } from './receipt-notifications';
 import { Confirmation } from './training';
+import { PlayerAvatar } from './player-profile';
 import { Button, Empty, Feedback, Field, Loading, PageTitle, Status } from './ui';
 type Invitation = { id: string; expiresAt: string; revokedAt: string | null; createdAt: string };
 export function Players() {
@@ -149,9 +150,36 @@ export function Players() {
               .filter((p) => `${p.name} ${p.email}`.toLowerCase().includes(search.toLowerCase()))
               .map((player) => (
                 <div className="player-row" key={player.id}>
-                  <span className="avatar">{player.name[0]}</span>
+                  {player.removedAt ? (
+                    <span className="avatar">{player.name[0]}</span>
+                  ) : (
+                    <Link
+                      href={`/management/players/${player.id}`}
+                      aria-label={`View ${player.name}'s profile`}
+                    >
+                      <PlayerAvatar
+                        id={player.id}
+                        name={player.name}
+                        version={player.playerProfile?.photoVersion}
+                      />
+                    </Link>
+                  )}
                   <div className="player-info">
-                    <strong>{player.name}</strong>
+                    {player.removedAt ? (
+                      <strong>{player.name}</strong>
+                    ) : (
+                      <Link className="text-action" href={`/management/players/${player.id}`}>
+                        {player.name}
+                      </Link>
+                    )}
+                    {player.playerProfile?.primaryPosition && (
+                      <small>
+                        {player.playerProfile.primaryPosition}
+                        {player.playerProfile.shirtNumber !== null
+                          ? ` · #${player.playerProfile.shirtNumber}`
+                          : ''}
+                      </small>
+                    )}
                     <small>{player.email}</small>
                     <Status
                       value={
@@ -677,12 +705,31 @@ export function Audit() {
     </>
   );
 }
-type Device = { id: string; createdAt: string; lastUsedAt: string; expiresAt: string };
+function sessionTimestamp(value: string) {
+  return new Intl.DateTimeFormat('en-NG', {
+    timeZone: 'Africa/Lagos',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+type Device = {
+  id: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  deviceLabel?: string | null;
+  isCurrent?: boolean;
+  authMethod?: 'PIN' | 'PASSWORD';
+};
 export function Account({ user }: { user: UserResponse }) {
   const devices = useCollection<Device>('/auth/sessions');
   const [revoke, setRevoke] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deviceMessage, setDeviceMessage] = useState<string | null>(null);
+  const [revokeOthers, setRevokeOthers] = useState(false);
+  const [deviceCredential, setDeviceCredential] = useState('');
+  const passwordConfirmation = user.role === 'MANAGER';
   const operations = useResource<{
     pendingPayments: number;
     paymentsRequiringReview: number;
@@ -691,7 +738,10 @@ export function Account({ user }: { user: UserResponse }) {
   async function remove() {
     if (!revoke) return;
     setBusy(true);
+    setError(null);
     try {
+      const label =
+        devices.items.find((device) => device.id === revoke)?.deviceLabel ?? 'The selected browser';
       await api(`/auth/sessions/${revoke}`, { method: 'DELETE' });
       setRevoke(null);
       try {
@@ -704,8 +754,31 @@ export function Account({ user }: { user: UserResponse }) {
         throw error;
       }
       await devices.reload();
+      setDeviceMessage(`${label} has been signed out.`);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removeOthers(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<{ revoked: number }>('/auth/sessions/revoke-others', {
+        method: 'POST',
+        body: { credential: deviceCredential },
+      });
+      setRevokeOthers(false);
+      setDeviceCredential('');
+      setDeviceMessage(
+        `Signed out ${result.revoked} other browser session${result.revoked === 1 ? '' : 's'}. This device stays signed in.`,
+      );
+      await devices.reload();
+    } catch (error) {
+      setError((error as Error).message);
     } finally {
       setBusy(false);
     }
@@ -734,6 +807,11 @@ export function Account({ user }: { user: UserResponse }) {
           <ShieldCheck size={30} />
           <h2>{user.name}</h2>
           <p>{user.email}</p>
+          {user.role === 'PLAYER' && (
+            <Link className="button secondary" href="/profile">
+              Edit my player profile
+            </Link>
+          )}
           <Status value={user.active ? 'ACTIVE' : 'INACTIVE'} />
           <p>{user.role === 'MANAGER' ? 'Team manager' : 'Team player'}</p>
           <Link
@@ -782,17 +860,34 @@ export function Account({ user }: { user: UserResponse }) {
               Refresh
             </Button>
           </div>
-          <Feedback error={devices.error} />
+          <Feedback error={devices.error} success={deviceMessage} />
           {devices.loading ? (
             <Loading />
           ) : (
             devices.items.map((d) => (
               <div className="record-row" key={d.id}>
                 <div>
-                  <strong>Signed in {dateLabel(d.createdAt)}</strong>
-                  <small>Last active {dateLabel(d.lastUsedAt, true)}</small>
+                  <strong>
+                    {d.deviceLabel ?? 'Unknown browser'}
+                    {d.isCurrent ? ' · This device' : ''}
+                  </strong>
+                  <small>Signed in {sessionTimestamp(d.createdAt)}</small>
+                  <small>
+                    Last active{' '}
+                    {Date.now() - new Date(d.lastUsedAt).getTime() < 60000
+                      ? 'just now'
+                      : sessionTimestamp(d.lastUsedAt)}{' '}
+                    (Lagos time)
+                  </small>
                 </div>
-                <Button variant="secondary" onClick={() => setRevoke(d.id)}>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setError(null);
+                    setRevoke(d.id);
+                  }}
+                >
                   Sign out
                 </Button>
               </div>
@@ -804,9 +899,20 @@ export function Account({ user }: { user: UserResponse }) {
             </Button>
           )}
           <p className="helper">
-            Device labels aren’t available yet. Use sign-in and last-active dates to identify a
-            session.
+            Each entry is a browser session. A browser and installed app may appear separately.
+            Older sessions show Unknown browser until you sign in again. Labels are approximate.
           </p>
+          <Button
+            variant="secondary"
+            disabled={busy || devices.loading || !!devices.error}
+            onClick={() => {
+              setError(null);
+              setDeviceCredential('');
+              setRevokeOthers(true);
+            }}
+          >
+            Sign out all other devices
+          </Button>
         </section>
       </div>
       {revoke && (
@@ -818,9 +924,44 @@ export function Account({ user }: { user: UserResponse }) {
           busy={busy}
           action="Sign out device"
         >
-          This ends the selected device’s session. If it’s your current device, you’ll need to sign
-          in again.
+          Sign out{' '}
+          {devices.items.find((device) => device.id === revoke)?.deviceLabel ??
+            'the selected browser'}
+          ? Access ends on its next request. If this is your current device, you’ll need to sign in
+          again.
         </Confirmation>
+      )}
+      {revokeOthers && (
+        <FormDialog
+          title="Sign out all other devices?"
+          busy={busy}
+          onClose={() => {
+            setRevokeOthers(false);
+            setDeviceCredential('');
+          }}
+        >
+          <p>
+            This signs out other browser sessions across all your teams. This device stays signed
+            in.
+          </p>
+          <Feedback error={error} />
+          <form className="form-stack" onSubmit={removeOthers}>
+            <Field
+              label={passwordConfirmation ? 'Confirm your password' : 'Confirm your PIN'}
+              type="password"
+              autoComplete="current-password"
+              inputMode={passwordConfirmation ? undefined : 'numeric'}
+              pattern={passwordConfirmation ? undefined : '[0-9]{4}'}
+              maxLength={passwordConfirmation ? 128 : 4}
+              value={deviceCredential}
+              onChange={(event) => setDeviceCredential(event.target.value)}
+              required
+            />
+            <Button type="submit" busy={busy}>
+              Confirm sign out other devices
+            </Button>
+          </form>
+        </FormDialog>
       )}
     </>
   );

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { profileSummary } from './profiles.js';
+export * from './profiles.js';
 export const id = z.string().uuid();
 export const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 export const email = z.string().trim().toLowerCase().email().max(254);
@@ -27,6 +29,7 @@ export const schemas = {
       email,
       password,
       invitationToken: z.string().min(32).max(200).optional(),
+      invitationContextId: id.optional(),
     })
     .strict(),
   staffLogin: z.object({ email, password: z.string().min(1).max(128) }).strict(),
@@ -92,9 +95,14 @@ export const schemas = {
       name: z.string().trim().min(1).max(100),
       email,
       pin,
-      invitationToken: z.string().min(32).max(200),
+      invitationToken: z.string().min(32).max(200).optional(),
+      invitationContextId: id.optional(),
     })
-    .strict(),
+    .strict()
+    .refine(
+      (input) => !!input.invitationToken !== !!input.invitationContextId,
+      'Use an invitation link or its saved continuation.',
+    ),
   login: z.object({ email, pin }).strict(),
   email: z.object({ email }).strict(),
   verify: z.object({ email, otp: z.string().regex(/^\d{6}$/) }).strict(),
@@ -168,6 +176,7 @@ export const userResponse = z.object({
   removedAt: z.string().datetime().nullable().optional(),
   activatedAt: z.string().datetime().nullable(),
   teamId: id.nullable(),
+  playerProfile: profileSummary.nullable().optional(),
 });
 export const attendanceResponse = z.object({
   id,

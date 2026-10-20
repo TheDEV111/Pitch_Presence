@@ -11,12 +11,14 @@ import { PlayerHome, Attendance, PlayerDues, PaymentReturn, CheckIn } from './pl
 import { ManagementHome, Training, TrainingSession } from './training';
 import { InstalledLaunch, InstallApp } from './pwa';
 import { TeamSwitcher } from './team-switcher';
+import { PlayerProfilePage } from './player-profile';
 import { Players, ManagementDues, Audit, Account } from './management';
 const playerNav = [
   { href: '/home', name: 'Home', icon: Home },
   { href: '/attendance', name: 'Attendance', icon: ScanLine },
   { href: '/dues', name: 'Dues', icon: Wallet },
   { href: '/account', name: 'Account', icon: ShieldCheck },
+  { href: '/profile', name: 'My profile', icon: Users },
 ];
 const managerNav = [
   { href: '/management', name: 'Overview', icon: Home },
@@ -30,7 +32,7 @@ export function Application({ route }: { route: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [signInPath, setSignInPath] = useState(
-    ['home', 'attendance', 'dues', 'dues/payment-return', 'check-in'].includes(route)
+    ['home', 'attendance', 'dues', 'dues/payment-return', 'check-in', 'profile'].includes(route)
       ? '/player/sign-in'
       : '/sign-in',
   );
@@ -174,7 +176,7 @@ export function Application({ route }: { route: string }) {
   const manager = user.role === 'MANAGER';
   if (
     (route.startsWith('management') && !manager) ||
-    (['home', 'attendance', 'dues', 'dues/payment-return'].includes(route) && manager)
+    (['home', 'attendance', 'dues', 'dues/payment-return', 'profile'].includes(route) && manager)
   )
     return (
       <main id="main" className="not-found">
@@ -196,6 +198,9 @@ export function Application({ route }: { route: string }) {
   }
   let content;
   if (route === 'home') content = <PlayerHome user={user} />;
+  else if (route === 'profile') content = <PlayerProfilePage />;
+  else if (route.startsWith('management/players/'))
+    content = <PlayerProfilePage id={route.split('/')[2]} />;
   else if (route === 'attendance') content = <Attendance />;
   else if (route === 'dues') content = <PlayerDues user={user} />;
   else if (route === 'dues/payment-return') content = <PaymentReturn />;

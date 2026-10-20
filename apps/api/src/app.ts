@@ -21,6 +21,7 @@ import { createProviders, type Providers } from './infrastructure/providers.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { invitationRoutes } from './modules/invitations/routes.js';
 import { rosterRoutes } from './modules/roster/routes.js';
+import { profileRoutes } from './modules/profiles/routes.js';
 import { trainingRoutes } from './modules/training/routes.js';
 import { attendanceRoutes } from './modules/attendance/routes.js';
 import { duesRoutes } from './modules/dues/routes.js';
@@ -79,7 +80,7 @@ export async function buildApp(
   app.addHook('onSend', async (request, reply) => {
     reply
       .header('X-Request-Id', request.id)
-      .header('Cache-Control', 'no-store')
+      .header('Cache-Control', reply.getHeader('Cache-Control') ?? 'no-store')
       .header('X-Content-Type-Options', 'nosniff')
       .header('X-Frame-Options', 'DENY')
       .header('Referrer-Policy', 'no-referrer');
@@ -171,9 +172,10 @@ export async function buildApp(
   const payments = new PaymentService(db, config, providers);
   const router = new Router(app, config, auth, db);
   authRoutes(router, auth, config);
-  teamRoutes(router, team);
+  teamRoutes(router, team, config);
   invitationRoutes(router, config);
   rosterRoutes(router);
+  profileRoutes(router);
   trainingRoutes(router, training);
   attendanceRoutes(router, attendance);
   duesRoutes(router, dues);

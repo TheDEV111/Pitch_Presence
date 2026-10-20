@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { pagination, schemas } from '@pitchpresence/shared';
-import { type Router, empty } from '../../plugins/router.js';
+import { type Router, type RouteContext, empty } from '../../plugins/router.js';
+import type { Config } from '../../config/index.js';
+import { InvitationContinuation } from '../invitations/continuation.js';
 import {
   teamCursor,
   cursorPage,
@@ -11,7 +13,28 @@ import {
 } from '../../plugins/core.js';
 import { publicUser } from '../auth/service.js';
 import type { TeamService } from './service.js';
-export function teamRoutes(r: Router, service: TeamService) {
+export function teamRoutes(r: Router, service: TeamService, config: Config) {
+  const continuation = new InvitationContinuation(config);
+  async function invitationPreview(token: string) {
+    const row = await r.db.invitation.findUnique({ where: { tokenHash: digest(token) } });
+    requireRule(
+      row && !row.revokedAt && !row.acceptedAt && row.expiresAt > new Date(),
+      422,
+      'INVITATION_INVALID',
+      'This invitation has expired or is unavailable. Ask your team for a new invitation.',
+    );
+    const team = await r.db.team.findUniqueOrThrow({
+      where: { id: row.teamId },
+      select: { id: true, name: true },
+    });
+    return {
+      kind: row.kind,
+      email: row.email,
+      teamId: team.id,
+      teamName: team.name,
+      expiresAt: row.expiresAt,
+    };
+  }
   r.add(
     'POST',
     '/api/v1/teams',
@@ -41,24 +64,18 @@ export function teamRoutes(r: Router, service: TeamService) {
     z.object({ token: z.string().min(32).max(200) }).strict(),
     async (i, c) => {
       await rateLimit(r.db, `invitation-preview-v2:${c.request.ip}`, 120, 60);
-      const row = await r.db.invitation.findUnique({ where: { tokenHash: digest(i.token) } });
-      requireRule(
-        row && !row.revokedAt && !row.acceptedAt && row.expiresAt > new Date(),
-        422,
-        'INVITATION_INVALID',
-        'Ask your team for a new invitation.',
-      );
-      const team = await r.db.team.findUniqueOrThrow({
-        where: { id: row.teamId },
-        select: { id: true, name: true },
-      });
-      return {
-        kind: row.kind,
-        email: row.email,
-        teamId: team.id,
-        teamName: team.name,
-        expiresAt: row.expiresAt,
-      };
+      const data = await invitationPreview(i.token);
+      return { ...data, ...continuation.issue(c.request, c.reply, i.token, data.expiresAt) };
+    },
+    { access: 'public', query: true },
+  );
+  r.add(
+    'GET',
+    '/api/v1/invitations/resume',
+    z.object({ context: z.string().uuid() }).strict(),
+    async (i, c: RouteContext) => {
+      await rateLimit(r.db, `invitation-preview-v2:${c.request.ip}`, 120, 60);
+      return invitationPreview(continuation.resolve(c.request, i.context));
     },
     { access: 'public', query: true },
   );

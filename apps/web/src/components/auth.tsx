@@ -5,7 +5,14 @@ import Link from 'next/link';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import type { AuthResponse, RegistrationResponse } from '@pitchpresence/shared';
 import { api, RequestError, setCsrfToken } from '@/lib/api';
-import { pendingVerification, rememberVerification, forgetVerification } from '@/lib/onboarding';
+import {
+  pendingVerification,
+  rememberVerification,
+  forgetVerification,
+  pendingInvitationContext,
+  rememberInvitationContext,
+  forgetInvitationContext,
+} from '@/lib/onboarding';
 import { safeReturn } from '@/lib/format';
 import { Button, Feedback, Field, Logo } from './ui';
 import { HeroFilm } from './hero-film';
@@ -47,6 +54,9 @@ export function AuthForm({
   const [joinPassword, setJoinPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [invite, setInvite] = useState('');
+  const [invitationContextId, setInvitationContextId] = useState('');
+  const hasInvitation = !!(invite || invitationContextId);
+  const invitationRole = player ? 'PLAYER' : 'MANAGER';
   const [invalidInvite, setInvalidInvite] = useState(false);
   const [existing, setExisting] = useState<AuthSession | null>(null);
   const [preview, setPreview] = useState<{
@@ -92,7 +102,7 @@ export function AuthForm({
       setError((e as Error).message);
     }
   }
-  async function checkInvitation(token: string) {
+  async function checkInvitation(token: string, contextId = invitationContextId) {
     setPreviewBusy(true);
     setPreviewFailed(false);
     setError(null);
@@ -103,17 +113,33 @@ export function AuthForm({
         teamName: string;
         email: string | null;
         kind: 'MANAGER' | 'PLAYER';
-      }>(`/invitations/preview?token=${encodeURIComponent(token)}`);
+        contextId?: string;
+        contextExpiresAt?: string;
+      }>(
+        token
+          ? `/invitations/preview?token=${encodeURIComponent(token)}`
+          : `/invitations/resume?context=${encodeURIComponent(contextId)}`,
+      );
       if (data.kind !== (player ? 'PLAYER' : 'MANAGER')) {
         setInvalidInvite(true);
         setError('Open the invitation page for your role, or ask your team for a new link.');
         return;
       }
       setPreview(data);
+      if (data.contextId && data.contextExpiresAt) {
+        setInvitationContextId(data.contextId);
+        rememberInvitationContext(invitationRole, data.contextId, data.contextExpiresAt);
+      }
       if (data.email) setEmail(data.email);
     } catch (e) {
-      if (e instanceof RequestError && e.status === 422) setInvalidInvite(true);
-      else setPreviewFailed(true);
+      if (e instanceof RequestError && e.code === 'INVITATION_CONTEXT_EXPIRED') {
+        forgetInvitationContext(invitationRole);
+        setInvitationContextId('');
+        setInvalidInvite(false);
+      } else if (e instanceof RequestError && e.status === 422) {
+        setInvalidInvite(true);
+        forgetInvitationContext(invitationRole);
+      } else setPreviewFailed(true);
       failure(e, 'preview');
     } finally {
       setPreviewBusy(false);
@@ -144,10 +170,7 @@ export function AuthForm({
       const session = await api<AuthSession>('/auth/me');
       setCsrfToken(session.csrfToken, session.user.id);
       if (['staff/join', 'register'].includes(mode) && originalInvite.current) {
-        if (!originalInvite.current && session.nextStep !== 'CREATE_TEAM') {
-          forgetVerification(session.user.role, session.user.email);
-          location.replace(sessionHome(session));
-        } else setExisting(session);
+        setExisting(session);
       } else if (
         !onAuthenticated &&
         ['signup', 'register', 'verify-email', 'sign-in', 'player/sign-in'].includes(mode)
@@ -166,7 +189,12 @@ export function AuthForm({
     }
   }
   useEffect(() => {
-    originalInvite.current = new URLSearchParams(location.search).get('invite') ?? '';
+    if (!inviteCaptured.current)
+      originalInvite.current =
+        new URLSearchParams(location.search).get('invite') ??
+        (pendingVerification(invitationRole)
+          ? ''
+          : (pendingInvitationContext(invitationRole)?.id ?? ''));
     const saved = pendingVerification(player ? 'PLAYER' : 'MANAGER');
     if (saved) {
       setPendingEmail(saved.email);
@@ -188,8 +216,15 @@ export function AuthForm({
       const token = new URLSearchParams(location.search).get('invite') ?? '';
       setInvite(token);
       if (token) {
+        forgetInvitationContext(invitationRole);
         history.replaceState(null, '', '/' + mode);
         void checkInvitation(token);
+      } else if (!pendingVerification(invitationRole)) {
+        const saved = pendingInvitationContext(invitationRole);
+        if (saved) {
+          setInvitationContextId(saved.id);
+          void checkInvitation('', saved.id);
+        }
       }
     }
   }, [mode]);
@@ -208,7 +243,7 @@ export function AuthForm({
   async function authenticated(session: AuthSession, acceptInvite = true) {
     setCsrfToken(session.csrfToken, session.user.id);
     forgetVerification(session.user.role, session.user.email);
-    if (invite && acceptInvite) {
+    if (hasInvitation && acceptInvite) {
       if (
         preview?.teamId &&
         (session.user.teamId === preview.teamId ||
@@ -222,14 +257,17 @@ export function AuthForm({
           session = await api<AuthSession>('/auth/invitations/accept', {
             method: 'POST',
             body: {
-              token: invite,
+              ...(invite ? { token: invite } : { invitationContextId }),
               ...(joinPin ? { pin: joinPin } : {}),
               ...(joinPassword ? { password: joinPassword } : {}),
             },
           });
           setCsrfToken(session.csrfToken, session.user.id);
         } else {
-          await api('/auth/staff-invitation/accept', { method: 'POST', body: { token: invite } });
+          await api('/auth/staff-invitation/accept', {
+            method: 'POST',
+            body: invite ? { token: invite } : { invitationContextId },
+          });
           session = await api<AuthSession>('/auth/me');
         }
       } catch (e) {
@@ -254,6 +292,7 @@ export function AuthForm({
         throw e;
       }
     }
+    forgetInvitationContext(invitationRole);
     if (onAuthenticated) onAuthenticated(session);
     else {
       const requested = safeReturn(new URLSearchParams(location.search).get('returnTo'));
@@ -262,7 +301,9 @@ export function AuthForm({
         requested &&
         (session.user.role === 'MANAGER'
           ? requested.startsWith('/management') || requested === '/account'
-          : ['/home', '/attendance', '/dues', '/account', '/check-in'].includes(requested));
+          : ['/home', '/attendance', '/dues', '/account', '/check-in', '/profile'].includes(
+              requested,
+            ));
       location.assign(allowed ? requested : sessionHome(session));
     }
   }
@@ -289,16 +330,26 @@ export function AuthForm({
           {
             method: 'POST',
             body: player
-              ? { name, email, pin: credential, invitationToken: invite }
+              ? {
+                  name,
+                  email,
+                  pin: credential,
+                  ...(invite ? { invitationToken: invite } : { invitationContextId }),
+                }
               : {
                   name,
                   email,
                   password: credential,
-                  ...(invite ? { invitationToken: invite } : {}),
+                  ...(invite
+                    ? { invitationToken: invite }
+                    : invitationContextId
+                      ? { invitationContextId }
+                      : {}),
                 },
           },
         );
         verification(email, result.resendAfterSeconds ?? 60);
+        forgetInvitationContext(invitationRole);
         setMessage(result.message);
       } else if (stage === 'verify') {
         let session: AuthSession;
@@ -353,7 +404,7 @@ export function AuthForm({
         setMessage('Your account is saved. Enter your latest email code, or request a new one.');
       } else if (
         stage === 'register' &&
-        invite &&
+        hasInvitation &&
         e instanceof RequestError &&
         e.code === 'ACCOUNT_EXISTS'
       ) {
@@ -390,7 +441,7 @@ export function AuthForm({
   const needsInvite =
     stage !== 'verify' &&
     ['register', 'staff/join'].includes(mode) &&
-    (!invite || invalidInvite || previewFailed || previewBusy || !preview);
+    (!hasInvitation || invalidInvite || previewFailed || previewBusy || !preview);
   return (
     <div className="auth-form">
       <p className="eyebrow">
@@ -401,7 +452,7 @@ export function AuthForm({
         {stage === 'login'
           ? 'BACK TO THE TEAM.'
           : stage === 'register'
-            ? player || invite
+            ? player || hasInvitation
               ? 'YOUR TEAM IS WAITING.'
               : 'MAKE ROOM FOR FOOTBALL.'
             : stage === 'verify'
@@ -416,7 +467,7 @@ export function AuthForm({
           : stage === 'register'
             ? player
               ? 'Create your player account using your team invitation.'
-              : invite
+              : hasInvitation
                 ? 'Join your team as a coach or manager. Both have full management access.'
                 : 'Create your staff account, verify your email, then name your team.'
             : stage === 'verify'
@@ -504,7 +555,7 @@ export function AuthForm({
           <Button
             busy={busy}
             disabled={
-              !invite ||
+              !hasInvitation ||
               invalidInvite ||
               previewFailed ||
               previewBusy ||
@@ -551,7 +602,9 @@ export function AuthForm({
             ? 'Checking your invitation…'
             : previewFailed
               ? 'Retry checking your invitation to continue.'
-              : 'Ask your coach or manager for a new invitation link.'}
+              : invalidInvite
+                ? 'Ask your coach or manager for a new invitation link.'
+                : 'Reopen the original invitation link shared by your team. If you already registered, choose Verify your email below to continue.'}
         </div>
       ) : (
         <form onSubmit={submit} className="form-stack">
@@ -642,7 +695,7 @@ export function AuthForm({
               </button>
             </>
           )}
-          {stage === 'login' && invite && (
+          {stage === 'login' && hasInvitation && (
             <Button
               type="button"
               variant="secondary"
@@ -691,40 +744,46 @@ export function AuthForm({
           )}
         </form>
       )}
-      {['login', 'register'].includes(stage) && (
-        <button
-          className="text-action"
-          onClick={() => {
-            verification(email || pendingEmail);
-            setMessage('Enter your email and request a new verification code.');
-          }}
-        >
-          {pendingEmail ? 'Continue email verification' : 'Verify your email'}
-        </button>
-      )}
-      {mode === 'staff/join' && !existing && (
-        <button
-          className="text-action"
-          onClick={() => {
-            setStage(stage === 'login' ? 'register' : 'login');
-            setCredential('');
-            setError(null);
-          }}
-        >
-          {stage === 'login' ? 'Create a staff account' : 'Already have an account? Sign in'}
-        </button>
-      )}
-      {mode === 'sign-in' && (
-        <p className="auth-help">
-          <Link href="/signup">Create your team</Link> ·{' '}
-          <Link href="/player/sign-in">Player sign in</Link>
-        </p>
-      )}
-      {stage !== 'login' && mode !== 'staff/join' && (
-        <Link className="text-action" href={player ? '/player/sign-in' : '/sign-in'}>
-          <ArrowLeft size={16} /> Back to sign in
-        </Link>
-      )}
+      <nav className="auth-navigation" aria-label="Account access options">
+        {!existing && ['login', 'register'].includes(stage) && (
+          <button
+            type="button"
+            className="text-action"
+            disabled={busy || !authLoaded || !!authError}
+            onClick={() => {
+              verification(email || pendingEmail);
+              setMessage('Enter your email and request a new verification code.');
+            }}
+          >
+            {pendingEmail ? 'Continue email verification' : 'Verify your email'}
+          </button>
+        )}
+        {mode === 'staff/join' && !existing && (
+          <button
+            type="button"
+            className="text-action"
+            disabled={busy || !authLoaded || !!authError}
+            onClick={() => {
+              setStage(stage === 'login' ? 'register' : 'login');
+              setCredential('');
+              setError(null);
+            }}
+          >
+            {stage === 'login' ? 'Create a staff account' : 'Already have an account? Sign in'}
+          </button>
+        )}
+        {mode === 'sign-in' && (
+          <p className="auth-help">
+            <Link href="/signup">Create your team</Link> ·{' '}
+            <Link href="/player/sign-in">Player sign in</Link>
+          </p>
+        )}
+        {stage !== 'login' && mode !== 'staff/join' && (
+          <Link className="text-action" href={player ? '/player/sign-in' : '/sign-in'}>
+            <ArrowLeft size={16} /> Back to sign in
+          </Link>
+        )}
+      </nav>
       <div className="auth-security">
         <ShieldCheck size={18} />
         <span>Your records, securely kept together.</span>

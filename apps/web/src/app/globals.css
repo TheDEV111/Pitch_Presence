@@ -1046,8 +1046,32 @@ svg {
   font-weight: 600;
   color: var(--green);
 }
-.auth-form > .auth-help {
+.auth-navigation .auth-help {
   font-size: 13px;
+}
+.auth-navigation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 24px;
+}
+.auth-navigation > .text-action {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 0;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.auth-navigation > .text-action svg {
+  flex-shrink: 0;
+}
+.auth-navigation .auth-help {
+  margin: 0;
+  line-height: 1.6;
 }
 .auth-security {
   margin-top: 32px;

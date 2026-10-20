@@ -2,14 +2,42 @@ import { z } from 'zod';
 import { schemas, pagination } from '@pitchpresence/shared';
 import type { Router, RouteContext } from '../../plugins/router.js';
 import { empty } from '../../plugins/router.js';
-import { cookieName, digest, keyedDigest, requireRule, rateLimit } from '../../plugins/core.js';
+import {
+  cookieName,
+  digest,
+  keyedDigest,
+  requireRule,
+  rateLimit,
+  lock,
+} from '../../plugins/core.js';
 import type { Config } from '../../config/index.js';
 import { AuthService } from './service.js';
+import { deviceLabel } from './device.js';
+import { InvitationContinuation } from '../invitations/continuation.js';
 export function authRoutes(r: Router, auth: AuthService, config: Config) {
-  const establish = (
+  const continuation = new InvitationContinuation(config);
+  const invitationToken = (
+    input: { invitationToken?: string; invitationContextId?: string },
+    ctx: RouteContext,
+  ) => {
+    requireRule(
+      !(input.invitationToken && input.invitationContextId),
+      422,
+      'VALIDATION_FAILED',
+      'Use one invitation reference.',
+    );
+    return input.invitationContextId
+      ? continuation.resolve(ctx.request, input.invitationContextId)
+      : input.invitationToken;
+  };
+  const establish = async (
     result: Awaited<ReturnType<AuthService['createSession']>>,
     ctx: RouteContext,
   ) => {
+    await r.db.deviceSession.update({
+      where: { tokenHash: digest(result.token) },
+      data: { deviceLabel: deviceLabel(ctx.request.headers['user-agent']) },
+    });
     ctx.reply.setCookie(cookieName(config), result.token, {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',
@@ -32,7 +60,7 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     'POST',
     '/api/v1/auth/staff-register',
     schemas.staffRegister,
-    (i, c) => auth.staffRegister(i, c.request.ip),
+    (i, c) => auth.staffRegister({ ...i, invitationToken: invitationToken(i, c) }, c.request.ip),
     { access: 'public' },
   );
   r.add(
@@ -62,10 +90,19 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
   r.add(
     'POST',
     '/api/v1/auth/staff-invitation/accept',
-    z.object({ token: z.string().min(32).max(200).optional() }).strict(),
+    z
+      .object({
+        token: z.string().min(32).max(200).optional(),
+        invitationContextId: z.string().uuid().optional(),
+      })
+      .strict(),
     async (i, c) => {
-      const invitation = i.token
-        ? await r.db.invitation.findUnique({ where: { tokenHash: digest(i.token) } })
+      const token = invitationToken(
+        { invitationToken: i.token, invitationContextId: i.invitationContextId },
+        c,
+      );
+      const invitation = token
+        ? await r.db.invitation.findUnique({ where: { tokenHash: digest(token) } })
         : c.user.pendingInvitationId
           ? await r.db.invitation.findUnique({ where: { id: c.user.pendingInvitationId } })
           : null;
@@ -75,7 +112,7 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
         'INVITATION_INVALID',
         'A staff invitation is required.',
       );
-      return auth.acceptInvitation(c.user.id, i.token, c.session.authMethod);
+      return auth.acceptInvitation(c.user.id, token, c.session.authMethod);
     },
     { access: 'authenticated' },
   );
@@ -83,7 +120,7 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     'POST',
     '/api/v1/auth/register',
     schemas.register,
-    (i, c) => auth.register(i, c.request.ip),
+    (i, c) => auth.register({ ...i, invitationToken: invitationToken(i, c)! }, c.request.ip),
     { access: 'public' },
   );
   r.add(
@@ -174,7 +211,8 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
     '/api/v1/auth/invitations/accept',
     z
       .object({
-        token: z.string().min(32).max(200),
+        token: z.string().min(32).max(200).optional(),
+        invitationContextId: z.string().uuid().optional(),
         pin: z
           .string()
           .regex(/^\d{4}$/)
@@ -183,15 +221,20 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
       })
       .strict(),
     async (i, c) => {
+      const token = invitationToken(
+        { invitationToken: i.token, invitationContextId: i.invitationContextId },
+        c,
+      );
+      requireRule(token, 422, 'INVITATION_INVALID', 'Open your team invitation to continue.');
       let method = c.session.authMethod;
       const invitation = await r.db.invitation.findUnique({
-        where: { tokenHash: digest(i.token) },
+        where: { tokenHash: digest(token) },
       });
       if (invitation?.kind === 'MANAGER' && method !== 'PASSWORD') {
         await auth.verifyPassword(c.user.accountId, i.password);
         method = 'PASSWORD';
       }
-      const member = await auth.acceptInvitation(c.user.id, i.token, method, i.pin);
+      const member = await auth.acceptInvitation(c.user.id, token, method, i.pin);
       const result = await auth.createSession(member, method);
       await r.db.deviceSession.update({
         where: { id: c.session.id },
@@ -237,30 +280,49 @@ export function authRoutes(r: Router, auth: AuthService, config: Config) {
           revokedAt: null,
           expiresAt: { gt: new Date() },
         },
-        select: { id: true, createdAt: true, lastUsedAt: true, expiresAt: true },
+        select: {
+          id: true,
+          deviceLabel: true,
+          authMethod: true,
+          createdAt: true,
+          lastUsedAt: true,
+          expiresAt: true,
+        },
         take: i.limit + 1,
-        orderBy: { id: 'asc' },
+        orderBy: [{ lastUsedAt: 'desc' }, { id: 'desc' }],
         ...(i.cursor ? { cursor: { id: i.cursor }, skip: 1 } : {}),
       });
       return {
-        items: rows.slice(0, i.limit),
+        items: rows
+          .slice(0, i.limit)
+          .map((row) => ({ ...row, isCurrent: row.id === c.session.id })),
         nextCursor: rows.length > i.limit ? rows[i.limit - 1]!.id : null,
       };
     },
     { access: 'authenticated', query: true },
   );
   r.add(
+    'POST',
+    '/api/v1/auth/sessions/revoke-others',
+    z.object({ credential: z.string().min(1).max(128) }).strict(),
+    (i, c) => auth.revokeOtherSessions(c.user, c.session.id, i.credential),
+    { access: 'authenticated' },
+  );
+  r.add(
     'DELETE',
     '/api/v1/auth/sessions/:id',
     empty,
     async (_, c) => {
-      const result = await r.db.deviceSession.updateMany({
-        where: { id: c.params.id, user: { accountId: c.user.accountId } },
-        data: { revokedAt: new Date() },
-      });
-      requireRule(result.count, 404, 'NOT_FOUND', 'Session not found.');
-      await r.db.pushSubscription.deleteMany({
-        where: { sessionId: c.params.id, user: { accountId: c.user.accountId } },
+      await r.db.$transaction(async (tx) => {
+        await lock(tx, 'Account', c.user.accountId);
+        const result = await tx.deviceSession.updateMany({
+          where: { id: c.params.id, user: { accountId: c.user.accountId } },
+          data: { revokedAt: new Date() },
+        });
+        requireRule(result.count, 404, 'NOT_FOUND', 'Session not found.');
+        await tx.pushSubscription.deleteMany({
+          where: { sessionId: c.params.id, user: { accountId: c.user.accountId } },
+        });
       });
       return { revoked: true };
     },

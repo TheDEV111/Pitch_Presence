@@ -41,7 +41,7 @@ export class AuthService {
       900,
     );
   }
-  async register(input: RegisterInput, ip: string) {
+  async register(input: RegisterInput & { invitationToken: string }, ip: string) {
     await this.registrationLimits(input.email, ip, 'PLAYER');
     const pinHash = await argon2.hash(input.pin, { type: argon2.argon2id });
     try {
@@ -574,6 +574,49 @@ export class AuthService {
     await this.db.rateLimitBucket.deleteMany({ where: { key } });
     return this.createSession(user, role === 'MANAGER' ? 'PASSWORD' : 'PIN');
   }
+  async revokeOtherSessions(user: User, sessionId: string, credential: string) {
+    await rateLimit(this.db, `device-step-up:${user.accountId}`, 5, 900);
+    return this.db.$transaction(async (tx) => {
+      await lock(tx, 'Account', user.accountId);
+      requireRule(
+        await tx.deviceSession.findFirst({
+          where: {
+            id: sessionId,
+            userId: user.id,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+        }),
+        401,
+        'AUTHENTICATION_REQUIRED',
+        'Your session has ended. Sign in again.',
+      );
+      const account = await tx.account.findUniqueOrThrow({ where: { id: user.accountId } });
+      const hash = user.role === 'MANAGER' ? account.passwordHash : account.pinHash;
+      requireRule(
+        hash && (await argon2.verify(hash, credential)),
+        403,
+        'REAUTHENTICATION_FAILED',
+        `The ${user.role === 'MANAGER' ? 'password' : 'PIN'} is incorrect. No devices were signed out.`,
+      );
+      const result = await tx.deviceSession.updateMany({
+        where: {
+          user: { accountId: user.accountId },
+          id: { not: sessionId },
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { revokedAt: new Date() },
+      });
+      await tx.pushSubscription.deleteMany({
+        where: { user: { accountId: user.accountId }, session: { revokedAt: { not: null } } },
+      });
+      await audit(tx, user.id, 'OTHER_DEVICES_SIGNED_OUT', user.id, undefined, {
+        count: result.count,
+      });
+      return { revoked: result.count };
+    });
+  }
   async createSession(user: User, authMethod = user.role === 'MANAGER' ? 'PASSWORD' : 'PIN') {
     requireRule(
       user.role !== 'MANAGER' || authMethod === 'PASSWORD',
@@ -583,6 +626,7 @@ export class AuthService {
     );
     const token = randomToken();
     await this.db.$transaction(async (tx) => {
+      await lock(tx, 'Account', user.accountId);
       await lock(tx, 'User', user.id);
       const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
       requireRule(
