@@ -177,7 +177,7 @@ for (const failure of ['consumed-code', 'lost-response', 'invalid-code', 'differ
   });
 }
 
-test('player verification submits once and opens the registered team without accepting again', async ({
+test('player verification resumes after refresh, submits once and opens the registered team without accepting again', async ({
   page,
 }) => {
   let verified = false;
@@ -220,6 +220,23 @@ test('player verification submits once and opens the registered team without acc
   await page.getByLabel('Email address').fill(coach.email);
   await page.getByLabel('Choose a four-digit PIN').fill('2468');
   await page.getByRole('button', { name: 'Create player account', exact: true }).click();
+  await expect(page.getByLabel('Six-digit email code')).toBeVisible();
+  await page.getByLabel('Six-digit email code').fill('999999');
+  await page.reload();
+  await expect(page.getByLabel('Email address')).toHaveValue(coach.email);
+  await expect(page.getByLabel('Six-digit email code')).toHaveValue('');
+  await expect(page.getByLabel('Choose a four-digit PIN')).not.toBeVisible();
+  const recovery = await page.evaluate(() =>
+    sessionStorage.getItem('pitchpresence:verification:PLAYER'),
+  );
+  expect(recovery).not.toBeNull();
+  expect(Object.keys(JSON.parse(recovery!)).sort()).toEqual([
+    'email',
+    'expiresAt',
+    'resendAt',
+    'role',
+  ]);
+  expect(recovery).not.toContain('player-registration-invitation');
   await page.getByLabel('Six-digit email code').fill('012345');
   await page.getByLabel('Six-digit email code').evaluate((input) => {
     const form = (input as HTMLInputElement).form!;
@@ -236,6 +253,36 @@ test('player verification submits once and opens the registered team without acc
 test.beforeEach(async ({ page }) => {
   await page.route('https://images.pexels.com/**', (route) => route.abort());
   await page.route('https://fonts.googleapis.com/**', (route) => route.abort());
+});
+test('verification and sign-in actions occupy separate rows at phone, tablet and desktop widths', async ({
+  page,
+}) => {
+  await mockOnboarding(page);
+  for (const width of [320, 390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/register');
+    const options = page.getByRole('navigation', { name: 'Account access options' });
+    const verify = options.getByRole('button', { name: 'Verify your email', exact: true });
+    const back = options.getByRole('link', { name: 'Back to sign in' });
+    await expect(verify).toBeEnabled();
+    await expect(back).toBeVisible();
+    const top = await verify.boundingBox();
+    const bottom = await back.boundingBox();
+    expect(top).not.toBeNull();
+    expect(bottom).not.toBeNull();
+    expect(bottom!.y).toBeGreaterThanOrEqual(top!.y + top!.height + 8);
+    expect(top!.height).toBeGreaterThanOrEqual(44);
+    expect(bottom!.height).toBeGreaterThanOrEqual(44);
+    expect(top!.x).toBeGreaterThanOrEqual(0);
+    expect(bottom!.x + bottom!.width).toBeLessThanOrEqual(width);
+    await verify.click();
+    await expect(page.getByRole('button', { name: 'Verify email', exact: true })).toBeVisible();
+    const submit = await page
+      .getByRole('button', { name: 'Verify email', exact: true })
+      .boundingBox();
+    const below = await back.boundingBox();
+    expect(below!.y).toBeGreaterThanOrEqual(submit!.y + submit!.height + 8);
+  }
 });
 test('verification resumes after refresh and navigation without saving the code or password', async ({
   page,

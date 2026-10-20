@@ -20,6 +20,7 @@ const paths = new Set([
   'dues',
   'dues/payment-return',
   'account',
+  'profile',
   'management',
   'management/training',
   'management/players',
@@ -29,6 +30,7 @@ const paths = new Set([
 export default async function AppPage({ params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const route = path.join('/');
-  if (!paths.has(route) && !/^management\/training\/[0-9a-f-]{36}$/.test(route)) notFound();
+  if (!paths.has(route) && !/^management\/(training|players)\/[0-9a-f-]{36}$/.test(route))
+    notFound();
   return <Application key={route} route={route} />;
 }

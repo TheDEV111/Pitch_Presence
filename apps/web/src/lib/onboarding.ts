@@ -6,6 +6,48 @@ export interface PendingVerification {
   expiresAt: number;
 }
 const key = (role: VerificationRole) => `pitchpresence:verification:${role}`;
+const invitationKey = (role: VerificationRole) => `pitchpresence:join:${role}`;
+export function forgetInvitationContext(role: VerificationRole) {
+  try {
+    sessionStorage.removeItem(invitationKey(role));
+  } catch {
+    /* Storage is optional. */
+  }
+}
+export function rememberInvitationContext(role: VerificationRole, id: string, expiresAt: string) {
+  try {
+    sessionStorage.setItem(
+      invitationKey(role),
+      JSON.stringify({ id, expiresAt: Date.parse(expiresAt) }),
+    );
+  } catch {
+    /* The original link still works without storage. */
+  }
+}
+export function pendingInvitationContext(
+  role: VerificationRole,
+): { id: string; expiresAt: number } | null {
+  try {
+    const raw = sessionStorage.getItem(invitationKey(role));
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (
+      typeof data.id !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id) ||
+      typeof data.expiresAt !== 'number' ||
+      !Number.isFinite(data.expiresAt) ||
+      data.expiresAt <= Date.now() ||
+      data.expiresAt > Date.now() + 86400000
+    ) {
+      forgetInvitationContext(role);
+      return null;
+    }
+    return { id: data.id, expiresAt: data.expiresAt };
+  } catch {
+    forgetInvitationContext(role);
+    return null;
+  }
+}
 export function pendingVerification(role: VerificationRole): PendingVerification | null {
   try {
     const raw = sessionStorage.getItem(key(role));

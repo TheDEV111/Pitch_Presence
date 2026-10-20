@@ -4,6 +4,7 @@ import { audit, teamCursor, cursorPage, lock, page, requireRule } from '../../pl
 import { publicUser } from '../auth/service.js';
 import { z } from 'zod';
 import { empty } from '../../plugins/router.js';
+import { summarySelect } from '../profiles/service.js';
 export function rosterRoutes(r: Router) {
   r.add(
     'GET',
@@ -12,6 +13,7 @@ export function rosterRoutes(r: Router) {
     async (i, c) => {
       await teamCursor(r.db, 'User', c.teamId, i.cursor);
       const rows = await r.db.user.findMany({
+        include: { account: { select: { playerProfile: { select: summarySelect } } } },
         ...cursorPage(i.cursor, i.limit),
         where: {
           role: 'PLAYER',
@@ -19,7 +21,23 @@ export function rosterRoutes(r: Router) {
           ...(i.includeRemoved === 'true' ? {} : { removedAt: null }),
         },
       });
-      return page(rows.map(publicUser), i.limit);
+      return page(
+        rows.map((member) => ({
+          ...publicUser(member),
+          playerProfile: member.removedAt
+            ? null
+            : {
+                preferredFoot: null,
+                primaryPosition: null,
+                secondaryPositions: [],
+                photoVersion: null,
+                ...member.account.playerProfile,
+                shirtNumber: member.shirtNumber,
+                assignedPosition: member.assignedPosition,
+              },
+        })),
+        i.limit,
+      );
     },
     { query: true },
   );

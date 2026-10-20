@@ -46,13 +46,24 @@ enum OtpPurpose {
 
 // Global identity; User records below are team memberships with stable historical IDs.
 model Account {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  passwordHash String?
-  pinHash      String?
-  isVerified   Boolean  @default(false)
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  memberships  User[]
+  id            String         @id @default(uuid()) @db.Uuid
+  email         String         @unique
+  passwordHash  String?
+  pinHash       String?
+  isVerified    Boolean        @default(false)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  memberships   User[]
+  playerProfile PlayerProfile?
+}
+
+model PlayerProfile {
+  accountId          String   @id @db.Uuid
+  account            Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  preferredFoot      String?
+  primaryPosition    String?
+  secondaryPositions String[] @default([])
+  photo              Bytes?
+  photoVersion       String?  @db.Uuid
 }
 
 model User {
@@ -61,6 +72,8 @@ model User {
   accountId           String               @default(dbgenerated()) @db.Uuid
   account             Account              @relation(fields: [accountId], references: [id])
   name                String
+  shirtNumber         Int?
+  assignedPosition    String?
   role                Role                 @default(PLAYER)
   pinHash             String?
   passwordHash        String?
@@ -117,6 +130,7 @@ model DeviceSession {
   userId           String            @db.Uuid
   user             User              @relation(fields: [userId], references: [id])
   authMethod       String            @default("PIN")
+  deviceLabel      String?           @db.VarChar(80)
   tokenHash        String            @unique
   expiresAt        DateTime          @db.Timestamptz(3)
   lastUsedAt       DateTime          @default(now()) @db.Timestamptz(3)
@@ -126,6 +140,7 @@ model DeviceSession {
 
   @@unique([id, userId])
   @@index([userId])
+  @@index([expiresAt])
 }
 
 model PushSubscription {

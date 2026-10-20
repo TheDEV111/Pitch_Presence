@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { playerProfileResponse } from '@pitchpresence/shared';
 import { pushSettingsResponse } from '../modules/notifications/schema.js';
 import {
   userResponse,
@@ -16,6 +17,39 @@ import {
   transferAccountResponse,
 } from '@pitchpresence/shared';
 export function responseSchema(method: string, url: string): z.ZodTypeAny {
+  if (url === '/api/v1/invitations/preview' || url === '/api/v1/invitations/resume')
+    return z.object({
+      kind: z.enum(['PLAYER', 'MANAGER']),
+      email: z.string().email().nullable(),
+      teamId: z.string().uuid(),
+      teamName: z.string(),
+      expiresAt: z.string().datetime(),
+      contextId: z.string().uuid().optional(),
+      contextExpiresAt: z.string().datetime().optional(),
+    });
+  if (
+    url === '/api/v1/me/player-profile' ||
+    url === '/api/v1/me/player-profile/photo' ||
+    url === '/api/v1/management/players/:id/profile'
+  )
+    return playerProfileResponse;
+  if (url === '/api/v1/auth/sessions' && method === 'GET')
+    return z.object({
+      items: z.array(
+        z.object({
+          id: z.string().uuid(),
+          deviceLabel: z.string().max(80).nullable(),
+          authMethod: z.enum(['PIN', 'PASSWORD']),
+          isCurrent: z.boolean(),
+          createdAt: z.string().datetime(),
+          lastUsedAt: z.string().datetime(),
+          expiresAt: z.string().datetime(),
+        }),
+      ),
+      nextCursor: z.string().uuid().nullable(),
+    });
+  if (url === '/api/v1/auth/sessions/revoke-others')
+    return z.object({ revoked: z.number().int().nonnegative() });
   if (url === '/api/v1/management/notifications/push')
     return method === 'GET' ? pushSettingsResponse : z.object({ enabled: z.boolean() });
   if (url === '/api/v1/auth/staff-register' || url === '/api/v1/auth/register')

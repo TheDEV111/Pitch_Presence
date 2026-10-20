@@ -222,6 +222,8 @@ export class JobRunner {
     return true;
   }
   async maintain() {
+    // Expired login sessions have no remaining access; related push records cascade away.
+    await this.db.deviceSession.deleteMany({ where: { expiresAt: { lte: new Date() } } });
     await this.db.pushSubscription.deleteMany({
       where: {
         OR: [

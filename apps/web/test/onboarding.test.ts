@@ -3,6 +3,9 @@ import {
   pendingVerification,
   rememberVerification,
   forgetVerification,
+  rememberInvitationContext,
+  pendingInvitationContext,
+  forgetInvitationContext,
 } from '../src/lib/onboarding';
 let values: Map<string, string>;
 beforeEach(() => {
@@ -70,4 +73,18 @@ it('keeps verification usable when browser storage is blocked', () => {
   expect(rememberVerification('coach@example.com', 'MANAGER').email).toBe('coach@example.com');
   expect(pendingVerification('MANAGER')).toBeNull();
   expect(() => forgetVerification('MANAGER')).not.toThrow();
+});
+it('retains only a tab-scoped invitation reference and expires it without retaining the raw invitation', () => {
+  vi.useFakeTimers();
+  const id = '00000000-0000-4000-8000-000000000001';
+  rememberInvitationContext('PLAYER', id, new Date(Date.now() + 1800000).toISOString());
+  expect(pendingInvitationContext('PLAYER')?.id).toBe(id);
+  expect(pendingInvitationContext('MANAGER')).toBeNull();
+  const raw = JSON.parse([...values.values()][0]!);
+  expect(Object.keys(raw).sort()).toEqual(['expiresAt', 'id']);
+  vi.advanceTimersByTime(1800001);
+  expect(pendingInvitationContext('PLAYER')).toBeNull();
+  rememberInvitationContext('PLAYER', id, new Date(Date.now() + 60000).toISOString());
+  forgetInvitationContext('PLAYER');
+  expect(pendingInvitationContext('PLAYER')).toBeNull();
 });

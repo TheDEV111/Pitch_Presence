@@ -59,6 +59,7 @@ export async function testDatabase() {
     21: 0,
     23: 0,
     25: 7,
+    1009: 71, // PostgreSQL text[] (player secondary positions).
     700: 2,
     701: 3,
     1043: 7,
