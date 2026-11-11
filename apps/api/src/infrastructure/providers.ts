@@ -1,6 +1,7 @@
 import type { Config } from '../config/index.js';
 import { z } from 'zod';
 import { AppError } from '../plugins/core.js';
+import { assertStagingRecipient } from './staging-email.js';
 const bankPage = z.object({
   data: z.array(
     z.object({
@@ -73,6 +74,20 @@ async function request(url: string, secret: string, init: RequestInit = {}) {
   return response.json();
 }
 export function createProviders(config: Config): Providers {
+  const sendEmail = async (email: string, subject: string, text: string, key: string) => {
+    assertStagingRecipient(config, email);
+    if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured');
+    await request('https://api.resend.com/emails', config.RESEND_API_KEY, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: JSON.stringify({
+        from: config.EMAIL_FROM,
+        to: [email],
+        subject: `${config.APP_ENV === 'staging' ? '[STAGING] ' : ''}${subject}`,
+        text,
+      }),
+    });
+  };
   const paystack = async (path: string, init?: RequestInit) => {
     if (!config.PAYSTACK_SECRET_KEY)
       throw new AppError(503, 'PAYMENTS_UNAVAILABLE', 'Payments are not configured.');
@@ -107,12 +122,7 @@ export function createProviders(config: Config): Providers {
   });
   return {
     async sendBankNotice(email, subject, text, key) {
-      if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured');
-      await request('https://api.resend.com/emails', config.RESEND_API_KEY, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': key },
-        body: JSON.stringify({ from: config.EMAIL_FROM, to: [email], subject, text }),
-      });
+      await sendEmail(email, subject, text, key);
     },
     async banks() {
       const banks = new Map<string, Bank>();
@@ -192,30 +202,20 @@ export function createProviders(config: Config): Providers {
       throw new AppError(503, 'BANK_REVIEW_REQUIRED', 'Bank reconciliation could not finish.');
     },
     async sendStaffInvitation(email, url, key) {
-      if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured');
-      await request('https://api.resend.com/emails', config.RESEND_API_KEY, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': key },
-        body: JSON.stringify({
-          from: config.EMAIL_FROM,
-          to: [email],
-          subject: 'Join your team on PitchPresence',
-          text: `Your coach or manager invited you to manage their team. Open ${url} to create or sign in to your staff account. This invitation is for ${email} and expires in seven days.`,
-        }),
-      });
+      await sendEmail(
+        email,
+        'Join your team on PitchPresence',
+        `Your coach or manager invited you to manage their team. Open ${url} to create or sign in to your staff account. This invitation is for ${email} and expires in seven days.`,
+        key,
+      );
     },
     async sendOtp(email, otp, purpose, key) {
-      if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured');
-      await request('https://api.resend.com/emails', config.RESEND_API_KEY, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': key },
-        body: JSON.stringify({
-          from: config.EMAIL_FROM,
-          to: [email],
-          subject: `PitchPresence ${purpose === 'PIN_RESET' ? 'PIN reset' : purpose === 'PASSWORD_RESET' ? 'password reset' : 'email verification'}`,
-          text: `Your PitchPresence code is ${otp}. It expires in 10 minutes.`,
-        }),
-      });
+      await sendEmail(
+        email,
+        `PitchPresence ${purpose === 'PIN_RESET' ? 'PIN reset' : purpose === 'PASSWORD_RESET' ? 'password reset' : 'email verification'}`,
+        `Your PitchPresence code is ${otp}. It expires in 10 minutes.`,
+        key,
+      );
     },
     async initialize(input) {
       if (!config.PAYSTACK_SECRET_KEY)

@@ -1,5 +1,9 @@
 # Vercel frontend deployment
 
+For a separate staging frontend, follow [the staging guide](../staging.md).
+Staging uses its own Vercel project and API destination; do not apply its settings
+to the existing live project.
+
 Deploy the frontend as the Vercel project `pitch_presence`. The API and worker
 run on the VPS; PostgreSQL remains on Supabase. This guide does not imply a
 project or deployment has already been created.

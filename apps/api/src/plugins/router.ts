@@ -8,6 +8,7 @@ import { responseSchema } from './responses.js';
 import { cookieName, keyedDigest, requireRule, safeEqual } from './core.js';
 import type { Config } from '../config/index.js';
 import type { AuthService } from '../modules/auth/service.js';
+import { assertStagingRecipient } from '../infrastructure/staging-email.js';
 declare module 'fastify' {
   interface FastifyRequest {
     authSession: (DeviceSession & { user: User }) | null;
@@ -223,6 +224,15 @@ export class Router {
                 ? {}
                 : (request.body ?? {}),
         );
+        // Check before any account, credential or invitation mutation in the handler.
+        if (typeof input?.email === 'string') assertStagingRecipient(this.config, input.email);
+        if (
+          method !== 'GET' &&
+          session &&
+          !url.includes('/auth/logout') &&
+          !url.includes('/auth/sessions')
+        )
+          assertStagingRecipient(this.config, session.user.email);
         return handler(input, {
           request,
           reply,

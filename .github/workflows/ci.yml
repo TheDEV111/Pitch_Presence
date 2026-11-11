@@ -65,6 +65,14 @@ jobs:
       - name: Run desktop and mobile browser tests
         id: browser-tests
         run: npm run test:web
+      - name: Build staging frontend and verify its banner and indexing restrictions
+        env:
+          NEXT_PUBLIC_APP_ENV: staging
+          API_URL: https://staging-api.kairos-devs.com
+          E2E_EXPECT_STAGING: 'true'
+        run: |
+          npm run build -w @pitchpresence/web
+          npm run test:web -- apps/web/e2e/staging.spec.ts
       - name: Upload browser report and failure traces
         if: always() && steps.browser-tests.outcome != 'skipped'
         uses: actions/upload-artifact@v4
@@ -116,6 +124,32 @@ jobs:
           # Compose requires the app secrets at render time; reuse the disposable values.
           docker compose --env-file "$RUNNER_TEMP/pitchpresence-container.env" -f docker-compose.yaml config --quiet
           docker run --rm --env-file "$RUNNER_TEMP/pitchpresence-container.env" pitchpresence-api:${GITHUB_SHA} node scripts/check-production-env.mjs
+      - name: Validate isolated staging Compose and configuration without database access
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/pitchpresence-staging.env" <<'ENV'
+          NODE_ENV=production
+          APP_ENV=staging
+          APP_URL=https://staging.pitch-presence.kairos-devs.com
+          DATABASE_URL=postgresql://pitchpresence_app.ssssssssssssssssssss:fixture-password@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require
+          STAGING_SUPABASE_PROJECT_REF=ssssssssssssssssssss
+          PRODUCTION_SUPABASE_PROJECT_REF=pppppppppppppppppppp
+          STAGING_EMAIL_ALLOWLIST=tester@example.test
+          SESSION_SECRET=staging-container-session-secret-with-at-least-32-characters
+          DATA_ENCRYPTION_SECRET=staging-container-data-secret-with-at-least-32-characters
+          QR_SIGNING_SECRET=staging-container-qr-secret-with-at-least-32-characters
+          RESEND_API_KEY=re_staging_container_fixture
+          EMAIL_FROM=PitchPresence Staging <test@example.test>
+          PAYMENT_MODE=MANUAL
+          TRUST_PROXY=172.21.0.0/16
+          STAGING_API_MEMORY_LIMIT=512m
+          STAGING_WORKER_MEMORY_LIMIT=256m
+          STAGING_API_CPUS=1
+          STAGING_WORKER_CPUS=0.5
+          ENV
+          chmod 600 "$RUNNER_TEMP/pitchpresence-staging.env"
+          docker compose --env-file "$RUNNER_TEMP/pitchpresence-staging.env" -f docker-compose.staging.yaml config --quiet
+          docker run --rm --env-file "$RUNNER_TEMP/pitchpresence-staging.env" pitchpresence-api:${GITHUB_SHA} node scripts/check-runtime-env.mjs
       - name: Apply migrations and smoke test both production processes
         shell: bash
         run: |

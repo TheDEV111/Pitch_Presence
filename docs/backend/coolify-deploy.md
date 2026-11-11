@@ -2,6 +2,11 @@
 
 Production runs from `docker-compose.yaml` as a Docker Compose application on Coolify. PostgreSQL is hosted on Supabase.
 
+For staging, create a separate application using `docker-compose.staging.yaml` and
+follow [the staging guide](../staging.md). Do not reuse this production application's
+database or secrets. The shared API entrypoint now validates runtime configuration
+before applying migrations; staging additionally checks its Supabase project identity.
+
 ## Architecture
 
 - `api`: runs `scripts/start-api.sh`, which executes `prisma migrate deploy` and then the API server.

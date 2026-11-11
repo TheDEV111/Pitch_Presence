@@ -22,6 +22,10 @@ const schema = z.object({
       'Use explicit IP addresses or nonzero CIDR ranges',
     ),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  APP_ENV: z.enum(['development', 'staging', 'production']).default('development'),
+  STAGING_SUPABASE_PROJECT_REF: z.string().default(''),
+  PRODUCTION_SUPABASE_PROJECT_REF: z.string().default(''),
+  STAGING_EMAIL_ALLOWLIST: z.string().default(''),
   MULTI_TEAM_ENABLED: z.enum(['true', 'false']).default('false'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   APP_URL: z.string().url(),
@@ -46,7 +50,68 @@ const schema = z.object({
 });
 export type Config = z.infer<typeof schema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const config = schema.parse(env);
+  const config = schema.parse({
+    ...env,
+    APP_ENV: env.APP_ENV ?? (env.NODE_ENV === 'production' ? 'production' : 'development'),
+  });
+  if (config.APP_ENV === 'staging') {
+    if (
+      config.NODE_ENV !== 'production' ||
+      config.APP_URL !== 'https://staging.pitch-presence.kairos-devs.com' ||
+      config.PAYMENT_MODE !== 'MANUAL' ||
+      config.PAYSTACK_SECRET_KEY ||
+      new Set([config.SESSION_SECRET, config.DATA_ENCRYPTION_SECRET, config.QR_SIGNING_SECRET])
+        .size !== 3
+    )
+      throw new Error(
+        'Staging requires its HTTPS origin, production runtime, independent secrets and manual payments',
+      );
+    const project = config.STAGING_SUPABASE_PROJECT_REF;
+    const production = config.PRODUCTION_SUPABASE_PROJECT_REF;
+    if (!/^[a-z]{20}$/.test(project) || !/^[a-z]{20}$/.test(production) || project === production)
+      throw new Error(
+        'Staging requires distinct staging and production Supabase project references',
+      );
+    let database: URL;
+    try {
+      database = new URL(config.DATABASE_URL);
+    } catch {
+      throw new Error('Staging database connection is invalid');
+    }
+    const roles = ['postgres', 'pitchpresence_app'];
+    const direct =
+      database.hostname === `db.${project}.supabase.co` && roles.includes(database.username);
+    const pooled =
+      /^[a-z0-9-]+\.pooler\.supabase\.com$/.test(database.hostname) &&
+      roles.some((role) => database.username === `${role}.${project}`);
+    if (
+      !['postgres:', 'postgresql:'].includes(database.protocol) ||
+      !database.password ||
+      (!direct && !pooled) ||
+      (database.port && database.port !== '5432') ||
+      database.pathname !== '/postgres' ||
+      !['require', 'verify-ca', 'verify-full'].includes(
+        database.searchParams.get('sslmode') ?? '',
+      ) ||
+      new Set(database.searchParams.keys()).size !== [...database.searchParams.keys()].length ||
+      [...database.searchParams.keys()].some(
+        (key) =>
+          !['sslmode', 'connection_limit', 'pool_timeout', 'schema', 'connect_timeout'].includes(
+            key,
+          ),
+      ) ||
+      (database.searchParams.has('schema') && database.searchParams.get('schema') !== 'public')
+    )
+      throw new Error(
+        'Staging database must match its approved Supabase project over TLS on port 5432',
+      );
+    const recipients = config.STAGING_EMAIL_ALLOWLIST.split(',').map((email) => email.trim());
+    if (
+      !recipients.length ||
+      recipients.some((email) => !z.string().email().safeParse(email).success)
+    )
+      throw new Error('Staging requires a nonempty list of exact approved email addresses');
+  }
   if (config.VAPID_PUBLIC_KEY || config.VAPID_PRIVATE_KEY || config.VAPID_SUBJECT) {
     try {
       const publicKey = Buffer.from(config.VAPID_PUBLIC_KEY, 'base64url');

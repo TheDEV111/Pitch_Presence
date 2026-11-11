@@ -1,0 +1,16 @@
+export const stagingEnv = {
+  NODE_ENV: 'production',
+  APP_ENV: 'staging',
+  APP_URL: 'https://staging.pitch-presence.kairos-devs.com',
+  DATABASE_URL: `postgresql://postgres.${'s'.repeat(20)}:test-only-password@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require`,
+  STAGING_SUPABASE_PROJECT_REF: 's'.repeat(20),
+  PRODUCTION_SUPABASE_PROJECT_REF: 'p'.repeat(20),
+  STAGING_EMAIL_ALLOWLIST: 'coach@example.test,player@example.test,second@example.test',
+  SESSION_SECRET: 'staging-test-session-secret-00000000000000',
+  DATA_ENCRYPTION_SECRET: 'staging-test-data-secret-000000000000000',
+  QR_SIGNING_SECRET: 'staging-test-qr-secret-00000000000000000',
+  RESEND_API_KEY: 're_staging_test_fixture',
+  EMAIL_FROM: 'PitchPresence Staging <test@example.test>',
+  PAYMENT_MODE: 'MANUAL',
+  LOG_LEVEL: 'silent',
+};

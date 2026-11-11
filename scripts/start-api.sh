@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+node scripts/check-runtime-env.mjs
+
 echo "Running Prisma migrations..."
 node node_modules/prisma/build/index.js migrate deploy
 

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { PwaRuntime } from '@/components/pwa';
+const staging = process.env.NEXT_PUBLIC_APP_ENV === 'staging';
 export const metadata: Metadata = {
   title: { default: 'PitchPresence — More football. Less admin.', template: '%s | PitchPresence' },
   description:
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   icons: { icon: '/icon.svg', apple: '/icons/apple-touch-icon.png' },
   appleWebApp: { capable: true, title: 'PitchPresence', statusBarStyle: 'default' },
-  robots: { index: true, follow: true },
+  robots: { index: !staging, follow: !staging },
 };
 export const viewport: Viewport = { themeColor: '#195C3C', width: 'device-width', initialScale: 1 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +29,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <a className="skip-link" href="#main">
           Skip to content
         </a>
+        {staging && (
+          <aside className="staging-banner" aria-label="Staging environment">
+            STAGING — test data only
+          </aside>
+        )}
         {children}
         <PwaRuntime />
       </body>

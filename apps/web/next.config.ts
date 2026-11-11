@@ -1,5 +1,9 @@
 import type { NextConfig } from 'next';
 
+const staging = process.env.NEXT_PUBLIC_APP_ENV === 'staging';
+if (staging && process.env.API_URL !== 'https://staging-api.kairos-devs.com')
+  throw new Error('Staging frontend requires its staging API_URL');
+
 const config: NextConfig = {
   poweredByHeader: false,
   experimental: { cpus: 1, useTypeScriptCli: false },
@@ -27,6 +31,7 @@ const config: NextConfig = {
       {
         source: '/:path*',
         headers: [
+          ...(staging ? [{ key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' }] : []),
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'same-origin' },
           { key: 'X-Frame-Options', value: 'DENY' },

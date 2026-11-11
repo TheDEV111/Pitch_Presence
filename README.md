@@ -56,6 +56,8 @@ The test suite creates synthetic users and financial records; never point it at 
 
 ## Documentation
 
+- [Agent handover and current staging setup progress](AGENT_HANDOVER.md)
+- [Staging setup, isolated credentials and release testing](docs/staging.md)
 - [Private player profiles and coach profile cards](docs/backend/player-profiles.md)
 
 - [Coolify deployment: API and worker](docs/backend/coolify-deploy.md)

@@ -1,0 +1,69 @@
+name: pitchpresence-staging
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+x-app-env: &app-env
+  NODE_ENV: production
+  APP_ENV: staging
+  APP_URL: https://staging.pitch-presence.kairos-devs.com
+  DATABASE_URL: ${DATABASE_URL:?A separate staging database is required}
+  STAGING_SUPABASE_PROJECT_REF: ${STAGING_SUPABASE_PROJECT_REF:?Staging project reference is required}
+  PRODUCTION_SUPABASE_PROJECT_REF: ${PRODUCTION_SUPABASE_PROJECT_REF:?Production project reference is required for comparison only}
+  STAGING_EMAIL_ALLOWLIST: ${STAGING_EMAIL_ALLOWLIST:?Approved test addresses are required}
+  SESSION_SECRET: ${SESSION_SECRET:?A new staging session secret is required}
+  DATA_ENCRYPTION_SECRET: ${DATA_ENCRYPTION_SECRET:?A new staging encryption secret is required}
+  QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:?A new staging QR secret is required}
+  RESEND_API_KEY: ${RESEND_API_KEY:?A separate Resend API key is required}
+  EMAIL_FROM: ${EMAIL_FROM:?A verified sender is required}
+  PAYMENT_MODE: MANUAL
+  PAYSTACK_SECRET_KEY: ''
+  MULTI_TEAM_ENABLED: 'true'
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+  TRUST_PROXY: ${TRUST_PROXY:?Set the actual trusted proxy network}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pitchpresence-staging/api:${STAGING_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${STAGING_API_MEMORY_LIMIT:?Owner must approve an API memory limit}
+    cpus: ${STAGING_API_CPUS:?Owner must approve an API CPU limit}
+    environment:
+      <<: *app-env
+      PORT: 4000
+    networks: [default, coolify]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pitchpresence-staging/worker:${STAGING_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    command: ['node', 'apps/api/dist/worker.js']
+    depends_on:
+      api:
+        condition: service_healthy
+    # The inherited image health check targets the API, not this worker.
+    healthcheck:
+      disable: true
+    mem_limit: ${STAGING_WORKER_MEMORY_LIMIT:?Owner must approve a worker memory limit}
+    cpus: ${STAGING_WORKER_CPUS:?Owner must approve a worker CPU limit}
+    environment:
+      <<: *app-env
+    networks: [default, coolify]
+
+networks:
+  default: {}
+  coolify:
+    external: true

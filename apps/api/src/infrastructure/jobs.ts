@@ -1,4 +1,4 @@
-import { lock, requireRule } from '../plugins/core.js';
+import { AppError, lock, requireRule } from '../plugins/core.js';
 import { randomUUID } from 'node:crypto';
 import type { BackgroundJob, PrismaClient } from '@pitchpresence/database';
 import { z } from 'zod';
@@ -186,10 +186,12 @@ export class JobRunner {
         where: { id: job.id, leaseToken: token },
         data: { completedAt: new Date(), leaseUntil: null, leaseToken: null, payload: {} },
       });
-    } catch {
+    } catch (error) {
+      const blockedRecipient =
+        error instanceof AppError && error.code === 'STAGING_EMAIL_NOT_ALLOWED';
       const paymentJob = job.kind === 'VERIFY_PAYMENT';
       const old = Date.now() - job.createdAt.getTime() > 86400_000;
-      const exhausted = paymentJob ? old : job.attempts >= 5;
+      const exhausted = blockedRecipient || (paymentJob ? old : job.attempts >= 5);
       if (exhausted && paymentJob) {
         const p = paymentPayload.safeParse(job.payload);
         if (p.success && job.teamId)
@@ -209,7 +211,9 @@ export class JobRunner {
       await this.db.backgroundJob.updateMany({
         where: { id: job.id, leaseToken: token },
         data: {
-          lastError: 'Job processing failed; see provider availability and record state.',
+          lastError: blockedRecipient
+            ? 'STAGING_EMAIL_NOT_ALLOWED'
+            : 'Job processing failed; see provider availability and record state.',
           leaseUntil: null,
           leaseToken: null,
           availableAt: new Date(
