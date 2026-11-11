@@ -10,7 +10,8 @@ concurrency:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.58 cannot install Chromium on ubuntu-latest (now Ubuntu 26.04).
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
